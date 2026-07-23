@@ -64,7 +64,13 @@ report_timer_status() {
         if systemctl is-enabled --quiet "${_t}" 2>/dev/null; then
             _enabled="enabled"
         fi
-        _next="$(systemctl show "${_t}" -p NextElapseUSecRealtime --value 2>/dev/null || true)"
+        # Not using `--value` here: confirmed live that this host's older
+        # systemctl (systemd 219) doesn't support it, silently producing
+        # empty output that read as "not scheduled" even for a genuinely
+        # active, correctly-scheduled timer (systemctl list-timers showed
+        # the real next-fire time the whole time). Parsing the plain
+        # "Key=Value" form works on every systemd version.
+        _next="$(systemctl show "${_t}" -p NextElapseUSecRealtime 2>/dev/null | sed -n 's/^NextElapseUSecRealtime=//p')"
         if [[ -z "${_next}" ]]; then
             _next="not scheduled (timer is not active)"
         fi
