@@ -143,47 +143,96 @@ restore_env
 # not require a separate manual step. Re-render each unit under
 # deploy/systemd/ with the same path substitution bootstrap_server.sh uses,
 # and only touch /etc/systemd/system/ for ones that actually changed.
-_units_changed=0
+#
+# Deliberately never reactivates something an operator stopped/disabled on
+# purpose (e.g. the alert timer left off while ingest runs alone): a changed
+# unit is only *restarted* if it's already active. If it's inactive, the
+# installed file is updated so the new config applies whenever it's next
+# started, but redeploy itself never flips it on.
+declare -A _timer_action=(
+    ["exchange-events-ingest.timer"]="no change"
+    ["exchange-events-alert.timer"]="no change"
+)
+_changed_units=()
 if [[ "${EUID}" -eq 0 ]]; then
     for unit in deploy/systemd/*; do
         _name="$(basename "${unit}")"
+        _tmp="$(mktemp)"
         if [[ "${INSTALL_DIR}" != "/opt/exchange-events" ]]; then
-            _rendered="$(sed "s#/opt/exchange-events#${INSTALL_DIR}#g" "${unit}")"
+            sed "s#/opt/exchange-events#${INSTALL_DIR}#g" "${unit}" > "${_tmp}"
         else
-            _rendered="$(cat "${unit}")"
+            cp "${unit}" "${_tmp}"
         fi
         if [[ ! -f "/etc/systemd/system/${_name}" ]] || \
-           ! diff -q <(printf '%s' "${_rendered}") "/etc/systemd/system/${_name}" >/dev/null 2>&1; then
+           ! diff -q "${_tmp}" "/etc/systemd/system/${_name}" >/dev/null 2>&1; then
             log "systemd unit changed: ${_name} -- installing"
-            printf '%s\n' "${_rendered}" > "/etc/systemd/system/${_name}"
-            _units_changed=1
+            cp "${_tmp}" "/etc/systemd/system/${_name}"
+            _changed_units+=("${_name}")
         fi
+        rm -f "${_tmp}"
     done
-    if [[ "${_units_changed}" -eq 1 ]]; then
-        log "reloading systemd and restarting affected timers..."
+    if [[ "${#_changed_units[@]}" -gt 0 ]]; then
         systemctl daemon-reload
-        systemctl restart exchange-events-ingest.timer exchange-events-alert.timer 2>/dev/null || true
+        for _name in "${_changed_units[@]}"; do
+            if [[ -n "${_timer_action[${_name}]+x}" ]]; then
+                if systemctl is-active --quiet "${_name}"; then
+                    systemctl restart "${_name}"
+                    _timer_action["${_name}"]="restarted (unit changed, was already active)"
+                else
+                    _timer_action["${_name}"]="left stopped (unit changed, but was not active)"
+                fi
+            fi
+        done
     fi
 else
     log "WARNING: not running as root -- skipping systemd unit sync (can't write /etc/systemd/system/)."
 fi
 
+log "--- timer status (current state, for full clarity) ---"
+# `systemctl list-timers` silently omits inactive timers even with --all, so
+# it can't be used to report on one that's deliberately stopped -- querying
+# each unit's own NextElapseUSecRealtime directly works for both cases (it's
+# genuinely empty when inactive, since systemd has nothing armed to report).
+for _t in exchange-events-ingest.timer exchange-events-alert.timer; do
+    _active="inactive"
+    if systemctl is-active --quiet "${_t}" 2>/dev/null; then
+        _active="active"
+    fi
+    _enabled="disabled"
+    if systemctl is-enabled --quiet "${_t}" 2>/dev/null; then
+        _enabled="enabled"
+    fi
+    _next="$(systemctl show "${_t}" -p NextElapseUSecRealtime --value 2>/dev/null || true)"
+    if [[ -z "${_next}" ]]; then
+        _next="not scheduled (timer is not active)"
+    fi
+    log "${_t}: ${_active}, ${_enabled} -- ${_timer_action[${_t}]}"
+    log "  next fire: ${_next}"
+done
+
 log "applying schema (idempotent -- safe every deploy)..."
 "${VENV_DIR}/bin/exchange-events" init-db
 
-log "restarting ${SERVICE_NAME}..."
-systemctl restart "${SERVICE_NAME}"
-
-log "waiting for health check..."
-sleep 2
-if ! curl -sf -o /dev/null "${HEALTH_URL}"; then
-    log "FAILED: health check did not return 200 after restart. Rolling back to ${previous_sha:0:12}."
-    git checkout --quiet "${previous_sha}"
-    "${PIP}" install --quiet -r requirements.lock.txt
-    "${PIP}" install --quiet --no-deps -e .
-    "${VENV_DIR}/bin/exchange-events" init-db
+# Same "never reactivate something deliberately stopped" rule applies to the
+# web service -- a routine code-only redeploy should never silently start it
+# back up if an operator stopped it on purpose.
+if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    log "restarting ${SERVICE_NAME} (was already active)..."
     systemctl restart "${SERVICE_NAME}"
-    exit 1
+
+    log "waiting for health check..."
+    sleep 2
+    if ! curl -sf -o /dev/null "${HEALTH_URL}"; then
+        log "FAILED: health check did not return 200 after restart. Rolling back to ${previous_sha:0:12}."
+        git checkout --quiet "${previous_sha}"
+        "${PIP}" install --quiet -r requirements.lock.txt
+        "${PIP}" install --quiet --no-deps -e .
+        "${VENV_DIR}/bin/exchange-events" init-db
+        systemctl restart "${SERVICE_NAME}"
+        exit 1
+    fi
+else
+    log "${SERVICE_NAME} is not currently active -- code updated, but leaving it stopped (not auto-starting)."
 fi
 
 echo "${target_sha}" > "${STATE_FILE}"
