@@ -289,3 +289,23 @@ mistake here would be a real outage risk:
 
 Full test suite still 453 passed / ruff+mypy clean throughout (deploy
 tooling only, no application source touched).
+
+## 2026-07-23 — First real redeploy attempt: caught a gap in redeploy.sh itself
+
+User ran `scripts/redeploy.sh` for the first time on the real server (to
+pick up the port fixes above). It failed at the test-gate step: `No module
+named pytest`. Root cause: `bootstrap_server.sh` only ever installs
+`requirements.lock.txt` (the `postgres`+`deploy` extras) into the production
+venv -- `pytest`/`ruff`/`mypy` live in the `dev` extra, which nothing had
+ever installed there. The script's own safety design worked exactly as
+intended despite the bug: it failed *before* restarting anything, reverted
+the working tree to the previous known-good commit, and never touched the
+live service.
+
+**Fixed** `scripts/redeploy.sh` to install `-e ".[dev]"` alongside the
+locked deps before running its test gate -- mirrors what CI already does.
+Verified by reproducing the exact failure in a fresh venv (lockfile only,
+confirmed `pytest` genuinely absent), then confirming the fix installs
+pytest/ruff/mypy and the full suite passes (453 passed) in that same venv.
+
+**Next:** push, then re-run the same `redeploy.sh` invocation on the server.
