@@ -241,3 +241,51 @@ passed.
 **Still to update once we get there:** `app_new.py`'s iframe URL (currently
 defaults to `http://127.0.0.1:8080`) needs `EXCHANGE_EVENTS_URL=http://127.0.0.1:8502`
 when actually wired into the real HARCJ `app.py` on the server.
+
+## 2026-07-23 — Eliminated port duplication
+
+User pointed out the port number was hardcoded in multiple places after the
+8080->8502 change and asked for a single source of truth. Fixed properly:
+
+- **New single source**: `EXCHANGE_EVENTS_PORT` in `.env` (documented in
+  `.env.example`, default `8080`; `bootstrap_server.sh` writes the real
+  value in via its own `PORT=` env var, replacing the template line with
+  `sed` rather than appending -- appending would have left two
+  `EXCHANGE_EVENTS_PORT=` lines in the resulting `.env`, the same kind of
+  duplication being fixed).
+- `deploy/systemd/exchange-events-web.service`: `--bind
+  127.0.0.1:${EXCHANGE_EVENTS_PORT}` -- systemd's own native `ExecStart`
+  variable substitution (no shell wrapper), reading from `EnvironmentFile=`.
+- `scripts/redeploy.sh` / `rollback.sh`: `HEALTH_URL` now derives its port
+  from the same `.env` (`grep`), only falling back to `8080` if genuinely
+  absent; `HEALTH_URL` itself can still be overridden directly if ever
+  needed.
+- `wsgi.py`: docstring made generic (`${PORT}` placeholder) rather than
+  hardcoding a number that would go stale again.
+
+**Verified rigorously, not assumed** -- this changes what actually
+determines whether the web service binds to the right port at all, so a
+mistake here would be a real outage risk:
+1. A minimal test (`echo`, `EnvironmentFile` + native `${VAR}` in
+   `ExecStart`, no shell) confirmed the substitution mechanism works on
+   this sandbox's systemd 249. An earlier attempt with `printf`'s `%s` gave
+   a confusing wrong result -- turned out to be a **test-design bug**, not a
+   real finding: literal `%` characters in `ExecStart=` collide with
+   systemd's *own* `%h`/`%i`-style specifier syntax, unrelated to `$VAR`
+   environment substitution. Redone cleanly with `echo` (no `%` anywhere).
+2. Full realistic test: real venv, real database, the actual unit file
+   (paths substituted, run as a **user-scope** systemd service so no root
+   was needed), a real `.env` with `EXCHANGE_EVENTS_PORT=18081` --
+   `systemctl status` showed the live process's real command line as
+   `--bind 127.0.0.1:18081`, and `curl` confirmed it actually served real
+   data on that exact port. Fully cleaned up afterward.
+3. This was tested on systemd **249** (this sandbox), not this host's
+   systemd **219** -- the substitution mechanism itself is old, basic
+   systemd behavior (not a newer feature like the calendar-timer step
+   syntax was), so risk is low, but **re-confirm on first start on the real
+   server anyway** (`systemctl status exchange-events-web`, check the
+   command line shows the real port, not a literal `${EXCHANGE_EVENTS_PORT}`
+   string) before relying on it there.
+
+Full test suite still 453 passed / ruff+mypy clean throughout (deploy
+tooling only, no application source touched).

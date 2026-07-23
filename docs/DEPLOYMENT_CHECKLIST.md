@@ -150,14 +150,19 @@ Mirror `.env.example` exactly:
       Streamlit) with **no public URL, no reverse proxy, no TLS** — access is
       SSH-tunnel-only, with the app bound to `127.0.0.1`. This pipeline
       matches that exactly: `exchange-events-web.service` binds
-      `127.0.0.1:8502` (fixed 2026-07-23 — it previously defaulted to
-      `0.0.0.0`; port chosen as `8502` rather than the app's own generic
-      default `8080`, per the user's choice once on the real server), so
-      it's only reachable the same way the existing dashboard is:
+      `127.0.0.1:${EXCHANGE_EVENTS_PORT}` (fixed 2026-07-23 — it previously
+      defaulted to `0.0.0.0`). Currently `8502` on the real server, chosen
+      over the app's own generic default `8080` per the user's choice once
+      on the real server. The port is **not hardcoded anywhere** — it's set
+      once, in `.env`'s `EXCHANGE_EVENTS_PORT`, which the systemd unit
+      substitutes into its `ExecStart` and `scripts/redeploy.sh`/
+      `rollback.sh` read for their health check. So it's only reachable the
+      same way the existing dashboard is:
       ```bash
       ssh -L 8502:127.0.0.1:8502 <user>@<host>
       # then browse http://localhost:8502/ locally
       ```
+      (substitute whatever `EXCHANGE_EVENTS_PORT` is actually set to)
 - [ ] Render path (if ever used instead): nothing to do — Render provides a
       `*.onrender.com` subdomain with HTTPS automatically.
 

@@ -16,13 +16,20 @@ After=network.target
 # port 8501) is SSH-tunnel-only, no reverse proxy, no public URL -- matching
 # that posture rather than introducing a new externally reachable port on a
 # shared, otherwise-locked-down box. Reach it the same way: an SSH tunnel,
-# e.g. `ssh -L 8502:127.0.0.1:8502 <user>@<host>`.
+# e.g. `ssh -L ${EXCHANGE_EVENTS_PORT}:127.0.0.1:${EXCHANGE_EVENTS_PORT} <user>@<host>`.
+#
+# Port comes from EXCHANGE_EVENTS_PORT in .env (EnvironmentFile= below) --
+# the single source of truth; redeploy.sh/rollback.sh read the same value for
+# their health check. Verified this substitution works in ExecStart without
+# a shell wrapper (systemd's own native $VAR expansion, not shell expansion)
+# on systemd 249 locally; re-confirm on this host's systemd 219 the first
+# time this unit starts -- see docs/REAL_DEPLOYMENT_LOG.md.
 [Service]
 Type=simple
 WorkingDirectory=/opt/exchange-events
 EnvironmentFile=/opt/exchange-events/.env
 ExecStart=/opt/exchange-events/.venv/bin/gunicorn wsgi:app \
-    --bind 127.0.0.1:8502 \
+    --bind 127.0.0.1:${EXCHANGE_EVENTS_PORT} \
     --workers 4 \
     --access-logfile /var/log/exchange-events/access.log \
     --error-logfile /var/log/exchange-events/error.log

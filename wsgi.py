@@ -1,9 +1,11 @@
 """WSGI entrypoint for a production server (gunicorn/uwsgi), e.g.:
 
-    gunicorn wsgi:app --bind 0.0.0.0:8502 --workers 4
+    gunicorn wsgi:app --bind 0.0.0.0:${PORT} --workers 4
 
 Mirrors main.py::cmd_serve exactly -- no new logic, just exposing the same
-Flask app object at module level the way a WSGI server expects.
+Flask app object at module level the way a WSGI server expects. The actual
+deployed port lives in deploy/systemd/exchange-events-web.service, sourced
+from EXCHANGE_EVENTS_PORT in .env -- not fixed here.
 """
 
 from __future__ import annotations

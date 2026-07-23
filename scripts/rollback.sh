@@ -9,7 +9,8 @@ set -euo pipefail
 
 VENV_DIR="${VENV_DIR:-.venv}"
 SERVICE_NAME="${SERVICE_NAME:-exchange-events-web}"
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8502/api/v1/exchanges}"
+_env_port="$(grep -oP '^EXCHANGE_EVENTS_PORT=\K.*' .env 2>/dev/null || true)"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:${_env_port:-8080}/api/v1/exchanges}"
 STATE_FILE="${STATE_FILE:-.last_good_deploy}"
 PIP="${VENV_DIR}/bin/pip"
 

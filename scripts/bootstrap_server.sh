@@ -29,6 +29,9 @@
 #   PYTHON=python3   -- must be >=3.11; point this at whatever real 3.11+
 #                       interpreter is available (system python3 is often
 #                       too old -- verify with `PYTHON --version` first).
+#   PORT=8080        -- written into .env as EXCHANGE_EVENTS_PORT, the single
+#                       source of truth the systemd unit and redeploy/rollback
+#                       scripts all read from.
 
 set -euo pipefail
 
@@ -39,6 +42,7 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/exchange-events}"
 PYTHON="${PYTHON:-python3}"
+PORT="${PORT:-8080}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 log() { echo "[bootstrap] $*"; }
@@ -68,9 +72,10 @@ if [[ ! -f "${INSTALL_DIR}/.env" ]]; then
     log "scaffolding ${INSTALL_DIR}/.env from .env.example (fill in real secrets after)..."
     cp "${REPO_DIR}/.env.example" "${INSTALL_DIR}/.env"
     echo "EXCHANGE_EVENTS_SQLITE_PATH=${INSTALL_DIR}/data/exchange_events.db" >> "${INSTALL_DIR}/.env"
+    sed -i "s/^EXCHANGE_EVENTS_PORT=.*/EXCHANGE_EVENTS_PORT=${PORT}/" "${INSTALL_DIR}/.env"
     chmod 600 "${INSTALL_DIR}/.env"
 else
-    log "${INSTALL_DIR}/.env already exists -- leaving it untouched."
+    log "${INSTALL_DIR}/.env already exists -- leaving it untouched (including its EXCHANGE_EVENTS_PORT)."
 fi
 
 log "installing systemd units..."
@@ -92,6 +97,7 @@ systemctl enable --now exchange-events-web.service
 systemctl enable --now exchange-events-ingest.timer
 systemctl enable --now exchange-events-alert.timer
 
+_bound_port="$(grep -oP '^EXCHANGE_EVENTS_PORT=\K.*' "${INSTALL_DIR}/.env")"
 cat <<EOF
 
 [bootstrap] Done. Remaining manual steps:
@@ -99,6 +105,6 @@ cat <<EOF
      TEAMS_WEBHOOK_URL, ALERT_RECIPIENT_EMAIL, CME_API_ID/SECRET, etc.) --
      see .env.example for the full list.
   2. systemctl restart exchange-events-web   (to pick up the secrets)
-  3. curl http://127.0.0.1:8502/api/v1/exchanges  (should return 200)
+  3. curl http://127.0.0.1:${_bound_port}/api/v1/exchanges  (should return 200)
   4. From here on, scripts/redeploy.sh handles every future code update.
 EOF
