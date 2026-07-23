@@ -444,3 +444,68 @@ the metadata bug), `dst_transition_label`/`ZONE_ABBR` tests in
 `test_exchange_zones.py`, expiry-exchange and DST-abbreviation title tests in
 `test_alert_rules.py`. 453 passed (452 -> 453), ruff/mypy clean across 102
 source files.
+
+## Deployment scaffolding: lockfile, WSGI entrypoint, systemd path, gated redeploy (2026-07-23)
+
+**Context:** first real move from "runs on my machine" toward "runs on a server
+alongside an existing, unrelated dashboard/system" — a deep discussion (not
+just the checklist) about redeploy mechanics, dependency reproducibility, and
+keeping this pipeline from ever affecting the other system on the same host.
+
+**First git commit made.** Nothing was committed before this (the working tree
+itself was the only persistence layer). `.gitignore` confirmed clean — no
+`.db`, `.env`, or `__pycache__` ever staged.
+
+**Recipient email moved out of committed config.** `config/defaults.toml`'s
+`team_trading` recipient group previously had a real personal email hardcoded
+(added directly per an earlier explicit user request, before git existed).
+Now a harmless `placeholder@example.com`; the real address comes from a new
+`ALERT_RECIPIENT_EMAIL`/`ALERT_RECIPIENT_NAME` env pair, merged in
+`config/loader.py::_merge_secrets` exactly like every other secret. Chosen
+over "commit as-is" specifically because this file is about to go into git
+history permanently, on whatever remote it ends up pushed to.
+
+**Lockfile added** (`requirements.lock.txt`, via `pip-tools`) — `pyproject.
+toml` keeps loose version floors (fine for library use), but a deploy target
+needs exact, reproducible installs so "works on my machine" can't silently
+diverge from what a redeploy actually installs months later. Verified: a
+fresh venv installed from the lockfile alone (no `pyproject.toml` resolution)
+still passes all 453 tests.
+
+**`gunicorn` + `wsgi.py` added** — `serve`'s Flask dev server was explicitly
+not production-safe. `wsgi.py` mirrors `main.py::cmd_serve` exactly (no new
+logic). Verified live: real gunicorn, 2 workers, against the real database,
+serving `/` and `/api/v1/exchanges` correctly.
+
+**Redeploy decoupled from pipeline execution — the core mechanical decision.**
+The cron/timer-triggered `ingest`/`alert` runs never pull code themselves;
+they always execute whatever is currently installed on disk. Only a
+deliberate, gated `scripts/redeploy.sh` run changes that: fetch → checkout →
+install from the lockfile → run the full test suite + ruff + mypy (**abort
+before touching the live service if anything fails, and revert the working
+tree to the previous known-good commit** so a failed redeploy can never leave
+untested code on disk for the next cron tick to pick up) → `init-db`
+(idempotent) → restart the `exchange-events-web` systemd unit → curl the
+health endpoint → auto-rollback to the previous commit if the health check
+still fails post-restart. `scripts/rollback.sh` handles rolling back to a
+specific SHA (or the last-verified one, tracked in `.last_good_deploy`)
+without re-running tests, since that SHA already passed them during its own
+redeploy.
+
+**Self-managed server (systemd) established as the primary deployment path**,
+Render kept as a documented alternative (`docs/DEPLOYMENT_CHECKLIST.md` §3a
+vs §3b) — driven by the actual context: this pipeline is going onto a host
+that already runs another, unrelated dashboard/system, not a fresh isolated
+PaaS app. `deploy/systemd/` has ready-to-copy unit files: `exchange-events-
+web.service` (gunicorn, its own dedicated user/working directory/logs,
+`Restart=on-failure`), plus `exchange-events-ingest`/`exchange-events-alert`
+one-shot services on systemd timers matching the README's existing 6h/15min
+cadence. All deliberately isolated per-unit so a crash or restart of this
+app's units never touches the other system's.
+
+**Still open:** GitHub repo creation + push (no `gh` CLI available in this
+environment; needs the user's own account/org), the storage backend decision
+(SQLite vs. Postgres — including whether to share the *database* the other
+system might already run, never a schema/table), and whether the test gate
+lives primarily in CI (GitHub Actions) or only in `redeploy.sh` — leaning CI-
+primary but not yet set up, pending the repo existing.

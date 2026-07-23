@@ -678,3 +678,41 @@ bug, `test_exchange_zones.py` additions, expiry/DST title tests. `ruff`/
 `mypy` clean across 102 source files. Full detail in DECISIONS.md's "DST
 alert content: named abbreviations + a real metadata-stripping bug found"
 entry.
+
+## 2026-07-23 — Deployment scaffolding: git init, lockfile, WSGI, systemd, gated redeploy
+
+First git commit made (159 files) after confirming `.gitignore` was clean.
+Moved the hardcoded recipient email out of `config/defaults.toml` into a new
+`ALERT_RECIPIENT_EMAIL`/`ALERT_RECIPIENT_NAME` env pair (merged in
+`config/loader.py`), ahead of that file entering git history.
+
+Added `requirements.lock.txt` (pip-tools, `postgres`+`deploy` extras) —
+verified a completely fresh venv installed from the lockfile alone still
+passes all 453 tests. Added `gunicorn` as a `deploy` extra and a root-level
+`wsgi.py` mirroring `main.py::cmd_serve` — verified live under real gunicorn
+(2 workers) against the real database (`/` and `/api/v1/exchanges` both 200).
+
+Built the self-managed-server deployment path: `deploy/systemd/` (web
+service unit + ingest/alert one-shot services on systemd timers, 6h/15min
+cadence matching README's documented crontab), `scripts/redeploy.sh` (fetch
+→ checkout → lockfile install → full test suite + ruff + mypy gate → abort
+and revert on any failure, never restarting the live service on untested
+code → `init-db` → restart → health-check → auto-rollback on failure), and
+`scripts/rollback.sh` (roll back to a specific SHA or the last verified one).
+Key design point: the ingest/alert cron jobs never pull code themselves —
+only `redeploy.sh` changes what's installed, keeping "deploy" and "run the
+scheduled pipeline" fully decoupled.
+
+`docs/DEPLOYMENT_CHECKLIST.md` restructured around this: self-managed/
+systemd as the primary path (§3a), Render kept as an alternative (§3b) — the
+actual target is a host that already runs another, unrelated dashboard, not
+a fresh isolated PaaS app.
+
+**Tests:** 453 passed, ruff/mypy clean — unchanged from before this round.
+This was deploy tooling only; the only application source touched was
+`config/loader.py` (env-var merge) and `config/defaults.toml` (placeholder
+recipient), no schema change needed. Full detail in DECISIONS.md's
+"Deployment scaffolding" entry.
+
+**Still open:** GitHub repo + push (needs the user's own account, no `gh` CLI
+here), storage backend decision, CI-vs-script-only test gating.

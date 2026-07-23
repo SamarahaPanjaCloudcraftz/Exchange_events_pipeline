@@ -1,0 +1,10 @@
+# Matches the cadence already documented in README.md's "Scheduling" section.
+[Unit]
+Description=Run exchange-events alert every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+
+[Install]
+WantedBy=timers.target

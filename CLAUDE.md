@@ -239,13 +239,32 @@ needed to read metadata for something real. Fixed with one line + a
 regression test. Full detail in DECISIONS.md's "DST alert content: named
 abbreviations + a real metadata-stripping bug found" entry.
 
-If picking this up for further work: there is no pending phase and no open
-ask from the user. Look at [docs/PROGRESS_LOG.md](docs/PROGRESS_LOG.md)'s
-final entry and the "Known Issues / Watch-outs" section below for what would
-come next (live-source validation from a real deployment host, confirming
-BEA's table/line mapping, choosing an ISM aggregator or forecast source, KRX
-going live, the deployment checklist doc mentioned in the plan addendum,
-etc.) — all of it is additive (P4), not rework.
+**Post-delivery update 16 (2026-07-23):** first move toward actual deployment
+(not just the checklist — a real discussion of redeploy mechanics, since this
+pipeline is going onto a host that already runs another, unrelated dashboard).
+First git commit made (nothing was committed before this). Recipient email
+moved out of committed config into `ALERT_RECIPIENT_EMAIL`/`ALERT_RECIPIENT_
+NAME` env vars before that config file entered git history. Added a
+reproducible-install lockfile (`requirements.lock.txt`, pip-tools), `gunicorn`
++ root `wsgi.py` (verified live under real gunicorn), and a full self-managed-
+server deployment path: `deploy/systemd/` unit files (web service + ingest/
+alert timers) and a gated `scripts/redeploy.sh`/`scripts/rollback.sh` pair.
+Key design decision: the ingest/alert cron jobs never pull code themselves —
+only a deliberate `redeploy.sh` run (fetch → install from lockfile → full
+test+lint+typecheck gate → revert-and-abort on any failure → restart →
+health-check → auto-rollback) changes what's installed; this keeps "deploy"
+and "run the scheduled pipeline" fully decoupled, so a bad push can never
+sneak untested code onto disk between deploys. Full detail in DECISIONS.md's
+"Deployment scaffolding" entry.
+
+If picking this up for further work: **still open** — pushing to a GitHub
+remote (needs the user's own account/org; no `gh` CLI in this environment),
+the storage backend decision (SQLite vs. Postgres, including whether to share
+a *database* the other on-host system might already run), and whether the
+test gate lives primarily in CI (GitHub Actions, recommended) or only in
+`redeploy.sh`. Beyond that: live-source validation from a real deployment
+host, confirming BEA's table/line mapping, choosing an ISM aggregator or
+forecast source, KRX going live — all additive (P4), not rework.
 
 **Quick start (CLI):**
 ```bash
@@ -408,6 +427,6 @@ exchange-events serve --host 0.0.0.0 --port 8080
 - **No local Postgres server / Docker** in this environment — Postgres code paths share 100% of their logic with the passing SQLite tests, but have never been run against a live PG server here. Set `EXCHANGE_EVENTS_PG_DSN` to unskip `pytest -m integration`'s Postgres-parametrized tests.
 - **No IV provider ships in v1** — `IVThresholdProvider` is a fully-specified contract with every consumer (alert rule, API endpoint) degrading gracefully in its absence; wiring one in later is additive (`wiring._build_iv_provider`).
 - **KRX adapter is a structural stub** — wired end-to-end (normalizer, registry entry, tests) but `fetch()` intentionally returns no records; going live is future work, not a redesign.
-- Nothing has been committed to git yet (`git init` was run in Phase 0, no commits since) — the working tree itself is the persistence layer for now.
+- ~~Nothing has been committed to git yet~~ — **fixed 2026-07-23**: first commit made. Not yet pushed to a remote (needs a GitHub repo created by the user first — no `gh` CLI available in this environment).
 - ~~SQL repository/alert-log connection was not thread-safe under Flask's default threaded dev server~~ — **fixed 2026-07-21** (see post-delivery entry above); a `threading.Lock` now guards every connection access in both classes, with a dedicated stress-test regression test.
 - The dashboard (`dashboard/static/index.html`) now has exchange-specific tabs built dynamically from `/api/v1/exchanges` — if you add a 5th exchange to `api/routes/calendar.py`'s `EXCHANGES` list, it gets a tab automatically, no dashboard code change needed.

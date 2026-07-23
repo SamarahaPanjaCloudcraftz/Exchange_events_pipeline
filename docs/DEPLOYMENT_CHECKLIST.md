@@ -1,78 +1,109 @@
 # Deployment Checklist
 
 Practical checklist for getting this pipeline hosted remotely so the dashboard is
-reachable outside a local machine. Written with **Render** as the likely first
-target, but most items apply to any platform. Nothing here has been done yet —
-this is the to-do list, not a record of work completed.
+reachable outside a local machine. Covers both a **self-managed server**
+(systemd, likely alongside another existing system) and **Render** (PaaS) — the
+former is now the primary path (§3a), the latter kept as an alternative (§3b).
 
 ---
 
-## 1. Repo prep (do first, applies to any platform)
+## 1. Repo prep
 
-- [ ] `git add` + first commit — nothing is committed yet, and Render (like most
-      PaaS) deploys from a git repo/branch.
-- [ ] Double-check `.gitignore` excludes `*.db`, `.env`, `__pycache__/` before
-      that first commit (already set up correctly — just confirm nothing slipped
-      through, e.g. a local `exchange_events.db` sitting at repo root).
-- [ ] Add a production WSGI server dependency — none is currently installed.
-      `gunicorn` is the standard choice (`pip install gunicorn`, add to
-      `pyproject.toml` dependencies). The `serve` CLI command currently calls
-      Flask's own dev server directly (`main.py::cmd_serve` →
-      `flask_app.run(...)`), which is fine for local demos but explicitly not
-      meant for production (Flask prints its own warning about this).
-- [ ] Add a small `wsgi.py` (or similar) at the repo root that builds the same
-      `Flask` app `cmd_serve` builds, so gunicorn has something to import:
-      ```python
-      from exchange_events.config.loader import load_config
-      from exchange_events.wiring import build_application
-      from exchange_events.api.app import create_app
-      from exchange_events.dashboard.server import bp as dashboard_bp
+- [x] First git commit made (2026-07-23). `.gitignore` confirmed clean —
+      nothing sensitive (`.db`, `.env`, `__pycache__/`) was ever staged.
+- [x] `gunicorn` added as an optional dependency group (`pip install -e ".[deploy]"`,
+      see `pyproject.toml`'s `deploy` extra).
+- [x] `wsgi.py` added at the repo root — mirrors `main.py::cmd_serve` exactly,
+      exposes `app` for a WSGI server to import (`gunicorn wsgi:app`). Verified
+      live under real gunicorn (2 workers) against the real database.
+- [x] **Lockfile** added — `requirements.lock.txt` (via `pip-tools`, includes the
+      `postgres` + `deploy` extras). `pyproject.toml`'s own deps stay as loose
+      floors for anyone installing this as a library; the lockfile is what
+      `scripts/redeploy.sh` and any server install actually use, for
+      reproducible installs. Regenerate after any dependency change:
+      `pip-compile --extra=postgres --extra=deploy --output-file=requirements.lock.txt pyproject.toml`.
+      Verified: a completely fresh venv installed from the lockfile alone still
+      passes all 453 tests.
+- [ ] **Push to GitHub.** Needs a repo created on your account/org first (no
+      `gh` CLI available in this environment to do it programmatically) — once
+      it exists, `git remote add origin <url> && git push -u origin main`.
 
-      app_state = build_application(load_config())
-      app = create_app(
-          repository=app_state.repository,
-          alert_log=app_state.alert_log,
-          ingestion_engine=app_state.ingestion_engine,
-          clock=app_state.clock,
-          iv_provider=app_state.iv_provider,
-          default_range_days=app_state.config.ingestion.default_range_days,
-      )
-      app.register_blueprint(dashboard_bp)
-      ```
-      This mirrors `main.py::cmd_serve` exactly — no new logic, just exposing the
-      same `app` object at module level the way gunicorn expects.
+## 2. Storage decision — still open
 
-## 2. Storage decision
+- [ ] **Pick one:** SQLite on a persistent path **or** Postgres (Render's managed
+      instance, or one already running on the self-managed server) — the
+      repository layer already fully supports both, this is a config choice,
+      not a code change.
+- [ ] If SQLite: make sure `database.sqlite_path` points at a path that survives
+      redeploys — on a self-managed server that's any normal persistent disk
+      path (e.g. `/opt/exchange-events/exchange_events.db`, outside the git
+      checkout so `git checkout` in `redeploy.sh` never touches it); on Render
+      specifically, a plain container filesystem gets wiped on every redeploy,
+      so it must be on Render's persistent disk add-on.
+- [ ] If Postgres: set `EXCHANGE_EVENTS_PG_DSN` to its connection string, set
+      `database.backend = "postgres"` in the config TOML. Worth checking
+      whether the other existing system on the host already runs a Postgres
+      instance this could share a *database* on (never a schema/table) rather
+      than standing up a second server.
 
-- [ ] **Pick one:** SQLite-on-a-persistent-disk (simplest, fine for a demo/low
-      traffic) **or** Render's managed Postgres (recommended if this needs to
-      survive redeploys/restarts reliably — the repository layer already fully
-      supports both, this is a config choice, not a code change).
-- [ ] If SQLite: make sure `database.sqlite_path` in the config points at a path
-      on Render's **persistent disk** (a plain container filesystem gets wiped
-      on every redeploy — the default relative `exchange_events.db` will not
-      survive that).
-- [ ] If Postgres: create the Render Postgres instance, set
-      `EXCHANGE_EVENTS_PG_DSN` to its connection string, set
-      `database.backend = "postgres"` in the config TOML.
+## 3a. Self-managed server (systemd) — primary path
 
-## 3. Render service setup
+Everything below is now built and ready under `deploy/systemd/` and `scripts/`;
+what's left is copying it onto the actual server and filling in real paths.
 
-- [ ] **Web service** — build command installs the package (`pip install -e .`
-      or `pip install -e ".[postgres]"` if using Postgres), start command runs
-      gunicorn against the new `wsgi.py` (e.g. `gunicorn wsgi:app`).
+- [x] `deploy/systemd/exchange-events-web.service` — gunicorn running `wsgi:app`,
+      its own dedicated `exchange-events` user, own working directory
+      (`/opt/exchange-events` — adjust if different), own log files. `Restart=
+      on-failure` so a crash recovers on its own without affecting anything
+      else on the host.
+- [x] `deploy/systemd/exchange-events-ingest.{service,timer}` +
+      `exchange-events-alert.{service,timer}` — one-shot units on systemd
+      timers, same 6h/15min cadence already documented in README.md's
+      "Scheduling" section (a plain crontab works identically if you prefer
+      that over timers — both are just "run the CLI on a schedule").
+- [x] `scripts/redeploy.sh` — the gated redeploy flow: fetch → checkout →
+      install from the lockfile → **run the full test suite + ruff + mypy,
+      abort before touching the live service if anything fails** → `init-db`
+      (idempotent) → restart `exchange-events-web` → curl the health endpoint
+      → auto-rollback to the previous commit if the health check fails.
+      Never leaves the on-disk working tree pointed at untested code, since
+      the ingest/alert cron jobs run whatever is on disk regardless of whether
+      the web service was restarted.
+- [x] `scripts/rollback.sh` — checks out a specific SHA (or `.last_good_deploy`
+      by default, written by `redeploy.sh` on success), reinstalls, restarts,
+      re-verifies. Does not re-run tests (that SHA already passed them).
+- [ ] Copy the systemd unit files to `/etc/systemd/system/` on the real
+      server, adjust `WorkingDirectory`/`User`/paths to match, `daemon-reload`,
+      `enable --now` each unit.
+- [ ] Create the `exchange-events` system user + `/opt/exchange-events`
+      checkout + venv on the real server (first-time setup only).
+- [ ] Decide where CI fits: recommended is GitHub Actions running
+      `pytest`/`ruff`/`mypy` on every push to `main` as the **primary** gate
+      (bad code never reaches the branch the server pulls), with
+      `redeploy.sh`'s own test run as a secondary safety net right before
+      restart. Not yet set up — needs the GitHub repo to exist first (§1).
+
+## 3b. Render (PaaS) — alternative, if not self-hosting
+
+- [ ] **Web service** — build command installs from the lockfile
+      (`pip install -r requirements.lock.txt && pip install --no-deps -e .`),
+      start command runs gunicorn against `wsgi.py` (`gunicorn wsgi:app`).
 - [ ] Set the **health check path** to `/api/v1/exchanges` — cheap, no DB
       round-trip needed, already known-good from local testing.
 - [ ] **Scheduled jobs** for ingestion + alerting — the pipeline is deliberately
-      not its own scheduler (README's "Scheduling" section already documents
-      this). Two options, reuse the cadence already written down in the README:
+      not its own scheduler. Two options, reuse the cadence already written
+      down in the README:
       - Render **Cron Jobs** running `exchange-events ingest --incremental`
         (every 6h) and `exchange-events alert` (every 15min) directly, or
       - a scheduled job that just `curl -X POST` the already-built
         `/api/v1/ingest/trigger` endpoint instead, if running the CLI directly
         isn't convenient on the chosen job type.
+- [ ] Render's own git-triggered deploy replaces `scripts/redeploy.sh`'s
+      pull/restart mechanics, but you'd still want the test suite gating the
+      deploy — either via a Render "pre-deploy command" or, better, CI on the
+      GitHub side before Render ever sees the push.
 
-## 4. Environment variables (set in Render's dashboard, never committed)
+## 4. Environment variables (server's `.env` / Render's dashboard — never committed)
 
 Mirror `.env.example` exactly:
 
@@ -91,21 +122,26 @@ Mirror `.env.example` exactly:
 
 ## 5. Domain / TLS
 
-- [ ] Nothing to do for a first pass — Render provides a `*.onrender.com`
-      subdomain with HTTPS automatically. A custom domain can be added later
-      (Render handles the certificate) once there's an actual domain to point.
+- [ ] **Self-managed:** if this needs to be reachable outside the host, put it
+      behind whatever reverse proxy (nginx/Caddy) is already fronting the other
+      system on the same box — a distinct path prefix or subdomain, TLS
+      terminated there, never a second TLS setup for this app alone.
+- [ ] **Render:** nothing to do for a first pass — Render provides a
+      `*.onrender.com` subdomain with HTTPS automatically.
 
 ## 6. Post-deploy verification
 
-- [ ] Hit the Render URL root (`/`) — dashboard loads.
+- [ ] Hit the deployed URL root (`/`) — dashboard loads.
 - [ ] Hit `/api/v1/exchanges` — returns the exchange list (same health-check
-      endpoint from §3).
+      endpoint from §3a/3b).
 - [ ] Trigger one ingest manually (`exchange-events ingest --source iana_tz
-      --from ... --to ...` via Render shell, or `POST /api/v1/ingest/trigger`)
-      and confirm rows land — proves the deployed app can actually write to
-      whichever storage was chosen in §2.
-- [ ] Confirm the scheduled ingest/alert jobs from §3 actually ran on their
-      first scheduled tick (check Render's job logs).
+      --from ... --to ...`, or `POST /api/v1/ingest/trigger`) and confirm rows
+      land — proves the deployed app can actually write to whichever storage
+      was chosen in §2.
+- [ ] Confirm the scheduled ingest/alert jobs actually ran on their first
+      scheduled tick (`systemctl status exchange-events-ingest.timer` /
+      `journalctl -u exchange-events-ingest` on self-managed, or Render's job
+      logs).
 - [ ] If Email/Teams are configured, confirm a real alert dispatches — check
       recipient inbox / Teams channel, not just the app logs.
 
