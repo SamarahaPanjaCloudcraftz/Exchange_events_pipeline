@@ -220,3 +220,24 @@ Confirmed: all three `inactive (dead)`, `ps aux | grep -i exchange` returns
 nothing -- zero exchange-events processes running on the server. HARCJ
 remains completely unaffected (never touched by any of this). Nothing from
 this pipeline is live until deliberately restarted.
+
+## 2026-07-23 — Port changed to 8502
+
+User chose `8502` for this pipeline's web service instead of the app's own
+generic default `8080` (already confirmed free on the real server in the
+same recon check that found `8501` — HARCJ's port — in use). Updated every
+deployment-specific reference: `deploy/systemd/exchange-events-web.service`
+(`--bind`), `scripts/redeploy.sh`/`rollback.sh` (`HEALTH_URL` default),
+`scripts/bootstrap_server.sh` (post-install verification message),
+`wsgi.py` (docstring example), `docs/USER_GUIDE.md` and
+`docs/DEPLOYMENT_CHECKLIST.md` (tunnel command, port table). Left
+`README.md`/`CLAUDE.md` untouched -- those document the app's own generic
+local-dev default (any machine, `exchange-events serve --port 8080`),
+unrelated to this specific server's chosen port. Verified: `bash -n` on all
+three scripts, `systemd-analyze verify` on the web unit (clean besides the
+expected missing-venv error in this sandbox), full test suite still 453
+passed.
+
+**Still to update once we get there:** `app_new.py`'s iframe URL (currently
+defaults to `http://127.0.0.1:8080`) needs `EXCHANGE_EVENTS_URL=http://127.0.0.1:8502`
+when actually wired into the real HARCJ `app.py` on the server.

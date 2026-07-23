@@ -99,6 +99,6 @@ cat <<EOF
      TEAMS_WEBHOOK_URL, ALERT_RECIPIENT_EMAIL, CME_API_ID/SECRET, etc.) --
      see .env.example for the full list.
   2. systemctl restart exchange-events-web   (to pick up the secrets)
-  3. curl http://127.0.0.1:8080/api/v1/exchanges  (should return 200)
+  3. curl http://127.0.0.1:8502/api/v1/exchanges  (should return 200)
   4. From here on, scripts/redeploy.sh handles every future code update.
 EOF

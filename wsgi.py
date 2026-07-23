@@ -1,6 +1,6 @@
 """WSGI entrypoint for a production server (gunicorn/uwsgi), e.g.:
 
-    gunicorn wsgi:app --bind 0.0.0.0:8080 --workers 4
+    gunicorn wsgi:app --bind 0.0.0.0:8502 --workers 4
 
 Mirrors main.py::cmd_serve exactly -- no new logic, just exposing the same
 Flask app object at module level the way a WSGI server expects.

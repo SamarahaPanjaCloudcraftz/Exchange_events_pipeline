@@ -12,11 +12,11 @@ always been for HARCJ. The integrated dashboard now uses **two** ports, so
 the tunnel needs to forward both at once:
 
 ```bash
-ssh -L 8501:127.0.0.1:8501 -L 8080:127.0.0.1:8080 <user>@<host>
+ssh -L 8501:127.0.0.1:8501 -L 8502:127.0.0.1:8502 <user>@<host>
 ```
 
 - `8501` — HARCJ's existing Streamlit dashboard (unchanged port).
-- `8080` — this pipeline's dashboard, loaded inside HARCJ's second tab via an
+- `8502` — this pipeline's dashboard, loaded inside HARCJ's second tab via an
   iframe. If this port isn't forwarded too, the HARCJ tab still works fine,
   but the Exchange Events tab will show a broken/unreachable frame.
 
@@ -48,7 +48,7 @@ filter (default 1) and, on the calendar, an Upcoming/All-dates toggle.
 ## Something looks wrong?
 
 - **Exchange Events tab is blank/unreachable, HARCJ tab is fine** — almost
-  always the tunnel missing the `-L 8080:127.0.0.1:8080` forward above.
+  always the tunnel missing the `-L 8502:127.0.0.1:8502` forward above.
 - **Data looks stale** — the pipeline re-fetches on its own schedule (every 6h)
   and re-evaluates alerts every 15 minutes; it isn't tied to page refreshes.
 - **Anything else** — see [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)

@@ -13,7 +13,7 @@
 # Configure via env vars (defaults shown):
 #   VENV_DIR=.venv
 #   SERVICE_NAME=exchange-events-web     # systemd unit for the gunicorn service
-#   HEALTH_URL=http://127.0.0.1:8080/api/v1/exchanges
+#   HEALTH_URL=http://127.0.0.1:8502/api/v1/exchanges
 #   STATE_FILE=.last_good_deploy
 
 set -euo pipefail
@@ -21,7 +21,7 @@ set -euo pipefail
 REF="${1:-origin/main}"
 VENV_DIR="${VENV_DIR:-.venv}"
 SERVICE_NAME="${SERVICE_NAME:-exchange-events-web}"
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8080/api/v1/exchanges}"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8502/api/v1/exchanges}"
 STATE_FILE="${STATE_FILE:-.last_good_deploy}"
 PIP="${VENV_DIR}/bin/pip"
 PY="${VENV_DIR}/bin/python"

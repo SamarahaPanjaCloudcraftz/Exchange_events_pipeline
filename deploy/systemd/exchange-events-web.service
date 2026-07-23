@@ -16,13 +16,13 @@ After=network.target
 # port 8501) is SSH-tunnel-only, no reverse proxy, no public URL -- matching
 # that posture rather than introducing a new externally reachable port on a
 # shared, otherwise-locked-down box. Reach it the same way: an SSH tunnel,
-# e.g. `ssh -L 8080:127.0.0.1:8080 <user>@<host>`.
+# e.g. `ssh -L 8502:127.0.0.1:8502 <user>@<host>`.
 [Service]
 Type=simple
 WorkingDirectory=/opt/exchange-events
 EnvironmentFile=/opt/exchange-events/.env
 ExecStart=/opt/exchange-events/.venv/bin/gunicorn wsgi:app \
-    --bind 127.0.0.1:8080 \
+    --bind 127.0.0.1:8502 \
     --workers 4 \
     --access-logfile /var/log/exchange-events/access.log \
     --error-logfile /var/log/exchange-events/error.log
