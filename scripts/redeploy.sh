@@ -75,7 +75,7 @@ log "applying schema (idempotent -- safe every deploy)..."
 "${VENV_DIR}/bin/exchange-events" init-db
 
 log "restarting ${SERVICE_NAME}..."
-sudo systemctl restart "${SERVICE_NAME}"
+systemctl restart "${SERVICE_NAME}"
 
 log "waiting for health check..."
 sleep 2
@@ -85,7 +85,7 @@ if ! curl -sf -o /dev/null "${HEALTH_URL}"; then
     "${PIP}" install --quiet -r requirements.lock.txt
     "${PIP}" install --quiet --no-deps -e .
     "${VENV_DIR}/bin/exchange-events" init-db
-    sudo systemctl restart "${SERVICE_NAME}"
+    systemctl restart "${SERVICE_NAME}"
     exit 1
 fi
 

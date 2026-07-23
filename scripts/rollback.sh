@@ -29,7 +29,7 @@ git checkout --quiet "${target_sha}"
 "${PIP}" install --quiet -r requirements.lock.txt
 "${PIP}" install --quiet --no-deps -e .
 "${VENV_DIR}/bin/exchange-events" init-db
-sudo systemctl restart "${SERVICE_NAME}"
+systemctl restart "${SERVICE_NAME}"
 
 sleep 2
 if ! curl -sf -o /dev/null "${HEALTH_URL}"; then

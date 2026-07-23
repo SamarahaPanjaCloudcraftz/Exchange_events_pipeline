@@ -43,8 +43,7 @@ former is now the primary path (§3a), the latter kept as an alternative (§3b).
       `/opt/exchange-events/exchange_events.db` — so `git checkout` inside
       `scripts/redeploy.sh` can never touch the database file, and the data
       directory doesn't show up as untracked noise in `git status`. Create
-      that `data/` directory (and give the `exchange-events` system user
-      write access to it) as part of first-time server setup.
+      that `data/` directory as part of first-time server setup.
 
 ## 3a. Self-managed server (systemd) — primary path
 
@@ -52,10 +51,18 @@ Everything below is now built and ready under `deploy/systemd/` and `scripts/`;
 what's left is copying it onto the actual server and filling in real paths.
 
 - [x] `deploy/systemd/exchange-events-web.service` — gunicorn running `wsgi:app`,
-      its own dedicated `exchange-events` user, own working directory
-      (`/opt/exchange-events` — adjust if different), own log files. `Restart=
-      on-failure` so a crash recovers on its own without affecting anything
-      else on the host.
+      own working directory (`/opt/exchange-events` — adjust if different),
+      own log files. `Restart=on-failure` so a crash recovers on its own
+      without affecting anything else on the host. **Runs as root, no
+      dedicated low-privilege user** — the real target server runs `/root`
+      at mode `700` (only root can traverse it), and the HARCJ dashboard's
+      own processes already run as root there; a dedicated service user
+      would be unable to reach anything under `/root` (including a
+      standalone Python interpreter this box needed — see
+      REAL_DEPLOYMENT_LOG.md). Matching the host's existing model was chosen
+      over relocating everything outside `/root`, at the cost of losing the
+      least-privilege isolation a dedicated user would give — a deliberate,
+      host-specific trade-off, not a general recommendation.
 - [x] `deploy/systemd/exchange-events-ingest.{service,timer}` +
       `exchange-events-alert.{service,timer}` — one-shot units on systemd
       timers, same 6h/15min cadence already documented in README.md's
@@ -78,16 +85,17 @@ what's left is copying it onto the actual server and filling in real paths.
       re-verifies. Does not re-run tests (that SHA already passed them).
 - [x] `scripts/bootstrap_server.sh` — first-time-only setup, run as root from
       inside the repo already cloned to its final location (default
-      `/opt/exchange-events`): creates the `exchange-events` system user,
-      persistent `data/`+log directories, the venv, installs the systemd
-      units (path-substituted if installed somewhere other than
-      `/opt/exchange-events`), scaffolds `.env` from `.env.example` with
-      `EXCHANGE_EVENTS_SQLITE_PATH` pre-filled, runs `init-db` as the service
-      user, and enables+starts all three units. Syntax-checked and
-      cross-referenced against the unit files here; **not executed against a
-      real server** (this sandbox isn't the deployment target, and running it
-      here would create real system state — needs root and is a one-time,
-      per-server action, so it's yours to run).
+      `/opt/exchange-events`): creates persistent `data/`+log directories,
+      the venv (from whichever Python `>=3.11` interpreter is passed via
+      `PYTHON=`), installs the systemd units (path-substituted if installed
+      somewhere other than `/opt/exchange-events`), scaffolds `.env` from
+      `.env.example` with `EXCHANGE_EVENTS_SQLITE_PATH` pre-filled, runs
+      `init-db`, and enables+starts all three units — all as root (see the
+      web-service entry above for why). Syntax-checked and cross-referenced
+      against the unit files here; **not executed against a real server**
+      (this sandbox isn't the deployment target, and running it here would
+      create real system state — needs root and is a one-time, per-server
+      action, so it's yours to run).
 - [ ] Run it on the real server, then fill in `.env`'s real secrets (the
       script only pre-fills the one non-secret value it already knows).
 - [ ] Decide where CI fits: recommended is GitHub Actions running

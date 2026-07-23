@@ -122,3 +122,49 @@ cron jobs depend on.
 
 **Next:** clone the repo into `/opt/exchange-events`, run
 `bootstrap_server.sh` with that Python, fill in `.env`, verify.
+
+## 2026-07-23 — Project directory + root-vs-dedicated-user decision
+
+User created the project directory at `/root/cloudcraftz/harcj_dash/exchange_event_pipeline`
+— alongside HARCJ's own `dashboard_new`, under the same parent. Flagged a
+real conflict before anything was cloned there: `/root` is mode `700` (root
+only), and this pipeline's design so far assumed a dedicated, unprivileged
+`exchange-events` system user running the web service and cron jobs — that
+user would be unable to reach anything under `/root` (working directory,
+`.env`, venv, all of it). HARCJ's own processes never hit this because they
+already run as root.
+
+**Decision (explicit, host-specific):** keep the project directory under
+`/root/cloudcraftz/harcj_dash/` as the user wanted, and run this pipeline's
+systemd units **as root** too, matching HARCJ's existing model on this box,
+rather than relocating everything to `/opt` to preserve a dedicated
+low-privilege user. Trade-off accepted knowingly: this pipeline's blast
+radius is now "root on a shared production box" rather than "one isolated
+low-privilege account" if its code were ever compromised. The alternative
+(move to `/opt/exchange_event_pipeline`, keep the dedicated user) was
+offered and declined in favor of matching the existing convention.
+
+**Consequence, and a simplification it produces:** since everything now runs
+as root, the earlier plan to relocate the standalone Python 3.11 interpreter
+out from under `/root/.local/...` (because a non-root service user couldn't
+reach it) is no longer needed — root can read `/root/.local/bin/python3.11`
+directly. One less step.
+
+**Changes made:**
+- `scripts/bootstrap_server.sh` — removed the `useradd`/dedicated-user logic
+  entirely; directories/`.env` are created root-owned; `init-db` runs
+  directly instead of via `sudo -u`.
+- `deploy/systemd/exchange-events-{web,ingest,alert}.service` — removed
+  `User=`/`Group=` (systemd defaults to root when unset), with a comment
+  explaining why, pointing back here.
+- `scripts/redeploy.sh` / `scripts/rollback.sh` — dropped the `sudo` prefix
+  on `systemctl restart` (this server operates as root directly already).
+- All changes verified: `bash -n` on all three scripts, `systemd-analyze
+  verify` on the web unit (clean parse, only the expected "gunicorn not
+  installed here" error since this sandbox has no venv at that path), full
+  test suite still 453 passed / ruff+mypy clean (no application source
+  touched, deploy tooling only).
+
+**Next:** clone the repo into
+`/root/cloudcraftz/harcj_dash/exchange_event_pipeline`, then run
+`PYTHON=/root/.local/bin/python3.11 ./scripts/bootstrap_server.sh`.

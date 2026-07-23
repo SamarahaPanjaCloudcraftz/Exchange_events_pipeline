@@ -1,11 +1,12 @@
 # One-shot alert evaluation + dispatch, triggered by exchange-events-alert.timer.
+#
+# Runs as root (no User=/Group= override), matching this host's existing
+# HARCJ dashboard -- see docs/REAL_DEPLOYMENT_LOG.md.
 [Unit]
 Description=Exchange Events Pipeline - alert evaluation (one-shot)
 
 [Service]
 Type=oneshot
-User=exchange-events
-Group=exchange-events
 WorkingDirectory=/opt/exchange-events
 EnvironmentFile=/opt/exchange-events/.env
 ExecStart=/opt/exchange-events/.venv/bin/exchange-events alert

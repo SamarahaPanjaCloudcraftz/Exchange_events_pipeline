@@ -1,10 +1,13 @@
 # Web service (API + dashboard). Copy to /etc/systemd/system/, then:
-#   sudo systemctl daemon-reload
-#   sudo systemctl enable --now exchange-events-web
+#   systemctl daemon-reload
+#   systemctl enable --now exchange-events-web
 #
-# Runs as its own unit, own working directory, own user -- deliberately
-# independent of any other service/dashboard on the same host. A restart or
-# crash here never touches other units.
+# Runs as its own unit, own working directory -- deliberately independent of
+# any other service/dashboard on the same host: a restart or crash here never
+# touches other units. Runs as root (no User=/Group= override), matching the
+# existing HARCJ dashboard's own model on this specific host -- a deliberate,
+# host-specific choice, not a general recommendation; see
+# docs/REAL_DEPLOYMENT_LOG.md for the isolation trade-off this accepts.
 [Unit]
 Description=Exchange Events Pipeline - web (API + dashboard)
 After=network.target
@@ -16,8 +19,6 @@ After=network.target
 # e.g. `ssh -L 8080:127.0.0.1:8080 <user>@<host>`.
 [Service]
 Type=simple
-User=exchange-events
-Group=exchange-events
 WorkingDirectory=/opt/exchange-events
 EnvironmentFile=/opt/exchange-events/.env
 ExecStart=/opt/exchange-events/.venv/bin/gunicorn wsgi:app \

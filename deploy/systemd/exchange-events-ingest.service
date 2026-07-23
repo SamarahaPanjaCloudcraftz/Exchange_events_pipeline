@@ -1,14 +1,15 @@
 # One-shot ingest run, triggered by exchange-events-ingest.timer.
 # Copy both files to /etc/systemd/system/, then:
-#   sudo systemctl daemon-reload
-#   sudo systemctl enable --now exchange-events-ingest.timer
+#   systemctl daemon-reload
+#   systemctl enable --now exchange-events-ingest.timer
+#
+# Runs as root (no User=/Group= override), matching this host's existing
+# HARCJ dashboard -- see docs/REAL_DEPLOYMENT_LOG.md.
 [Unit]
 Description=Exchange Events Pipeline - incremental ingest (one-shot)
 
 [Service]
 Type=oneshot
-User=exchange-events
-Group=exchange-events
 WorkingDirectory=/opt/exchange-events
 EnvironmentFile=/opt/exchange-events/.env
 ExecStart=/opt/exchange-events/.venv/bin/exchange-events ingest --incremental
