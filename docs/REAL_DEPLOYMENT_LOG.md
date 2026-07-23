@@ -359,3 +359,25 @@ timers still stopped/disabled (per the earlier explicit pause) -- not yet
 re-enabled. Real secrets (`FRED_API_KEY`, SMTP, Teams webhook, CME creds,
 etc.) not yet filled in. HARCJ's real `app.py` (not the local replica) not
 yet wired with the "Exchange Events" tab.
+
+## 2026-07-23 — Real secrets filled in, real ingest run, dashboard confirmed live with real data
+
+User filled in `.env` with real credentials (FRED, CME, plus notification
+secrets) and restarted the web service. Ran a full ingest across every
+source:
+
+**789 real records upserted** -- CME (100), NSE (64), IANA (12), FRED (578),
+BLS (23), FOMC (12). Failures matched documented expectations exactly, none
+blocking: BSE (known broken endpoint), ISM (no free source exists),
+MarketWatch/econ_calendar (blocked, not needed -- waterfall covers required
+data), BEA (optional PCE backstop, key not yet added).
+
+Ran `exchange-events alert` afterward. User confirmed via the actual browser
+(tunneled `ssh -L 8502:localhost:8502 215` -> `http://localhost:8502/`,
+after an initial mixup pointing at the wrong local port 8503) that the
+dashboard shows real data and real alerts -- the first genuine end-to-end
+confirmation of this pipeline working live on the production server.
+
+**Still open**: ingest/alert timers remain stopped/disabled (from the
+earlier explicit pause) -- this ingest/alert run was manual, one-off.
+HARCJ's real `app.py` still not wired with the "Exchange Events" tab.
