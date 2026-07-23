@@ -96,6 +96,38 @@ DEFAULT_HOLIDAY_GROUP_CODE = "ES"
 
 _WEEKEND = (5, 6)  # datetime.date.weekday(): Saturday, Sunday
 
+# Standard CME/Globex futures month codes -> calendar month. Used to classify
+# each *instrument's* actual expiry cadence from its real Globex symbol
+# (e.g. "ESU6" -> "U" -> September), rather than trusting a single static
+# label per underlying (see _series_for docstring below — this was a real
+# bug: every ES instrument was labeled "quarterly" regardless of its actual
+# contract month, including genuinely non-quarterly ones CME also lists
+# under the same root symbol).
+_MONTH_CODES: dict[str, int] = {
+    "F": 1, "G": 2, "H": 3, "J": 4, "K": 5, "M": 6,
+    "N": 7, "Q": 8, "U": 9, "V": 10, "X": 11, "Z": 12,
+}
+_QUARTERLY_MONTHS = frozenset({3, 6, 9, 12})  # Mar/Jun/Sep/Dec, the H/M/U/Z cycle
+
+
+def _series_for(globex_symbol: str | None, product: dict[str, str]) -> str:
+    """Classify one instrument's expiry cadence from its own Globex symbol's
+    month code, not from a static per-underlying assumption. CME can list
+    more than one expiry cadence under the same root symbol (e.g. ES has
+    both the standard quarterly H/M/U/Z cycle and off-cycle/serial contracts)
+    -- a single "this underlying is always quarterly" label doesn't hold.
+    Falls back to the product's configured default only if the symbol can't
+    be parsed as expected (e.g. an unrecognized month letter).
+    """
+    if globex_symbol:
+        code = product["code"].upper()
+        symbol = globex_symbol.upper()
+        if symbol.startswith(code) and len(symbol) > len(code):
+            month = _MONTH_CODES.get(symbol[len(code)])
+            if month is not None:
+                return "quarterly" if month in _QUARTERLY_MONTHS else "monthly"
+    return product.get("series", "quarterly")
+
 
 class CMEAdapter(HttpSourceAdapter):
     def source_name(self) -> str:
@@ -238,14 +270,15 @@ class CMEAdapter(HttpSourceAdapter):
                 day = datetime.date.fromisoformat(last_trade)
                 if not params.date_range.contains(day):
                     continue
+                globex_symbol = inst.get("globexSymbol")
                 out.append(
                     {
                         "record_type": "expiry",
                         "product": product["code"],
                         "instrument_type": product.get("instrument_type", "futures"),
-                        "series": product.get("series", "quarterly"),
+                        "series": _series_for(globex_symbol, product),
                         "expiry_date": last_trade,
-                        "id": inst.get("globexSymbol"),
+                        "id": globex_symbol,
                     }
                 )
             if not payload.get("_links", {}).get("next"):

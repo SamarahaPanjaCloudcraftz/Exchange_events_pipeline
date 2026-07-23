@@ -17,7 +17,7 @@ from exchange_events.adapters.bse import DEFAULT_HOLIDAY_URL as BSE_HOLIDAY_URL
 from exchange_events.adapters.bse import BSEAdapter
 from exchange_events.adapters.cme import DEFAULT_REFDATA_BASE_URL as CME_REFDATA_URL
 from exchange_events.adapters.cme import DEFAULT_TOKEN_URL as CME_TOKEN_URL
-from exchange_events.adapters.cme import CMEAdapter
+from exchange_events.adapters.cme import CMEAdapter, _series_for
 from exchange_events.adapters.config import AdapterConfig
 from exchange_events.adapters.econ import EconCalendarAdapter
 from exchange_events.adapters.fomc import FOMCScheduleAdapter
@@ -181,6 +181,49 @@ def test_cme_fetch_expiries_resolves_product_then_paginates_instruments():
     raw = ad.fetch(FetchParams(date_range=YEAR_RANGE.date_range, event_types=[EventType.EXPIRY]))
     assert {r["id"] for r in raw} == {"ESU6", "ESZ6"}  # ESZ9 filtered out (outside 2026)
     assert all(r["record_type"] == "expiry" and r["product"] == "ES" for r in raw)
+
+
+def test_cme_series_derived_from_symbol_month_code_not_static_label():
+    """Real bug, found live: every ES instrument was labeled "quarterly" from a
+    static per-product config value, regardless of its actual contract month --
+    including a genuinely non-quarterly contract CME also lists under the same
+    "ES" root symbol. series must be derived per-instrument from its own Globex
+    symbol's month code (standard quarterly cycle: H/M/U/Z = Mar/Jun/Sep/Dec),
+    not trusted from a single "this underlying is always quarterly" assumption.
+    """
+    http = FakeHttpClient()
+    _register_cme_token(http)
+    http.register_json(
+        f"{CME_REFDATA_URL}/products", {"_embedded": {"products": [{"productGuid": "GUID-ES"}]}}
+    )
+    http.register_json(
+        f"{CME_REFDATA_URL}/instruments",
+        {
+            "_embedded": {
+                "instruments": [
+                    {"globexSymbol": "ESU6", "lastTradeDate": "2026-09-18"},  # Sep -> quarterly
+                    {"globexSymbol": "ESN6", "lastTradeDate": "2026-07-24"},  # Jul -> NOT quarterly
+                ]
+            },
+            "_links": {},
+        },
+    )
+    ad = CMEAdapter(
+        http,
+        _cme_config(products=[{"code": "ES", "instrument_type": "futures", "series": "quarterly"}]),
+    )
+    raw = ad.fetch(FetchParams(date_range=YEAR_RANGE.date_range, event_types=[EventType.EXPIRY]))
+    by_id = {r["id"]: r for r in raw}
+    assert by_id["ESU6"]["series"] == "quarterly"
+    assert by_id["ESN6"]["series"] == "monthly"
+
+
+def test_series_for_falls_back_to_product_default_when_symbol_unparseable():
+    product = {"code": "ES", "series": "quarterly"}
+    assert _series_for(None, product) == "quarterly"  # no symbol at all
+    assert _series_for("XYZ123", product) == "quarterly"  # doesn't start with the product code
+    assert _series_for("ES", product) == "quarterly"  # no month-code suffix present
+    assert _series_for("ESA6", product) == "quarterly"  # "A" isn't a real month code
 
 
 def test_cme_fetch_expiries_skips_product_with_no_futures_match():

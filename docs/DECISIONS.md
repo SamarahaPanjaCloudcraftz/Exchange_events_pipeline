@@ -557,3 +557,35 @@ clean SIGTERM shutdown.
 PID files, state/dumps directories, or root's crontab — this pipeline's
 install is fully additive, in its own directory, own user, own systemd
 units, own venv.
+
+## CME expiry `series` mislabeling — real bug found on the live dashboard (2026-07-23)
+
+**Bug:** the dashboard showed an ES (E-mini S&P 500) futures expiry on
+2026-07-24 labeled "quarterly" — factually wrong, since standard quarterly
+ES contracts only expire in March/June/September/December (the H/M/U/Z
+cycle). Found by the user actually looking at the live dashboard, not by
+code review.
+
+**Root cause:** `adapters/cme.py`'s `_fetch_instrument_expiries` set `series`
+from a static, per-*underlying* config value (`DEFAULT_PRODUCTS`'s
+`"series": "quarterly"` for ES) applied uniformly to every instrument CME's
+API returned for that underlying — never derived from anything CME actually
+says about the specific contract. The earlier "CME dashboard expansion"
+entry above recorded exactly the wrong assumption behind this: "every
+currently configured CME product is a plain future (`instrument_type`/
+`series` are 1:1 with the underlying)" — false, since CME lists more than
+one expiry cadence under some root symbols (e.g. ES has both the standard
+quarterly cycle and off-cycle/serial contracts). The 2026-07-24 date itself
+was genuine live CME data, not fabricated — only the label was wrong.
+
+**Fix:** added `_series_for()`, which derives each instrument's cadence from
+its own real Globex symbol's month code (e.g. "ESU6" → "U" → September →
+quarterly; "ESN6" → "N" → July → not quarterly → "monthly") against the
+standard CME month-code table, falling back to the product's configured
+default only if the symbol can't be parsed as expected. Verified with two
+new regression tests: a real fetch producing both a quarterly (`ESU6`) and
+a non-quarterly (`ESN6`) instrument in the same response correctly gets two
+different `series` values (previously both would have been "quarterly");
+plus direct tests of the fallback path (missing symbol, symbol not matching
+the product's code, unrecognized month letter). Full suite: 455 passed (was
+453), ruff/mypy clean.
