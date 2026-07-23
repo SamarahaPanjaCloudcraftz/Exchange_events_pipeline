@@ -509,3 +509,51 @@ environment; needs the user's own account/org), the storage backend decision
 system might already run, never a schema/table), and whether the test gate
 lives primarily in CI (GitHub Actions) or only in `redeploy.sh` — leaning CI-
 primary but not yet set up, pending the repo existing.
+
+## Real target server confirmed: SSH-tunnel-only, root-owned, one shared cron line (2026-07-23)
+
+**Context:** the actual deployment target is a server already running an
+unrelated dashboard (HARCJ: Streamlit on port 8501 + two scheduler
+processes), not a fresh isolated host. The user described its operational
+shape, and a local replica of that codebase (`harcj_dashboard/dashboard_new`)
+was available to verify the details directly rather than working from
+prose alone.
+
+**Confirmed from `run_dashboard.sh` / `restart_schedulers.sh` /
+`.streamlit/config.toml`:**
+- Streamlit binds `127.0.0.1` explicitly (`address = "localhost"` in
+  `.streamlit/config.toml`) — no reverse proxy, no public URL, SSH-tunnel
+  access only.
+- The dashboard tree lives under `/root/cloudcraftz/harcj_dash/dashboard_new`
+  — that system runs as root, no venv isolation evident.
+- Exactly **one** cron job exists on the host: root's crontab,
+  `restart_schedulers.sh` at `1 0 * * *` America/Chicago, restarting the two
+  scheduler processes daily. Nothing else is cron-driven for that system.
+
+**Decisions this confirms/changes:**
+- `exchange-events-web.service` was fixed from `--bind 0.0.0.0:8080` to
+  `--bind 127.0.0.1:8080` — matches the host's existing no-public-exposure
+  posture instead of introducing a new externally reachable port. Reached the
+  same way as the existing dashboard: an SSH tunnel
+  (`ssh -L 8080:127.0.0.1:8080 <user>@<host>`).
+- Using **systemd timers rather than a crontab entry** for ingest/alert is
+  now validated, not just a preference: the host's only existing cron job
+  lives in root's crontab, and editing that same file for this pipeline's
+  schedule would risk an accidental edit to the existing line. Timers are a
+  fully separate mechanism.
+- `scripts/bootstrap_server.sh` requires root — consistent with the existing
+  system also running as root there.
+
+**Also caught by `systemd-analyze verify` + a real local run of the exact
+`ExecStart` command:** `Type=notice` in `exchange-events-web.service` was
+wrong — it requires the process to call `sd_notify(READY=1)`, which plain
+gunicorn never does, so the unit would have hung until the start timeout on
+every boot. Fixed to `Type=simple` (correct for a foregrounded,
+non-daemonizing process). Verified directly: real gunicorn, real venv, real
+database, bound to 127.0.0.1, served `/` and `/api/v1/exchanges` correctly,
+clean SIGTERM shutdown.
+
+**Still not touched by any of this:** the existing dashboard's processes,
+PID files, state/dumps directories, or root's crontab — this pipeline's
+install is fully additive, in its own directory, own user, own systemd
+units, own venv.

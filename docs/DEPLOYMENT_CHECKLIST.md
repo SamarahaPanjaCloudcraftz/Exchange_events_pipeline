@@ -59,8 +59,12 @@ what's left is copying it onto the actual server and filling in real paths.
 - [x] `deploy/systemd/exchange-events-ingest.{service,timer}` +
       `exchange-events-alert.{service,timer}` — one-shot units on systemd
       timers, same 6h/15min cadence already documented in README.md's
-      "Scheduling" section (a plain crontab works identically if you prefer
-      that over timers — both are just "run the CLI on a schedule").
+      "Scheduling" section. **Deliberately timers, not a crontab entry**: the
+      real target server has exactly one existing cron job (root's crontab,
+      restarting the other dashboard's schedulers at 00:01 CT) — adding to
+      that same crontab would risk an edit disturbing that line. Systemd
+      timers are a fully separate mechanism, so this pipeline's schedule can
+      never touch the existing one.
 - [x] `scripts/redeploy.sh` — the gated redeploy flow: fetch → checkout →
       install from the lockfile → **run the full test suite + ruff + mypy,
       abort before touching the live service if anything fails** → `init-db`
@@ -132,13 +136,20 @@ Mirror `.env.example` exactly:
 - [ ] `EXCHANGE_EVENTS_PG_DSN` — not used (SQLite chosen, §2); listed here only
       for completeness if that decision is ever revisited
 
-## 5. Domain / TLS
+## 5. Domain / TLS — DECIDED: none, SSH tunnel only (2026-07-23)
 
-- [ ] **Self-managed:** if this needs to be reachable outside the host, put it
-      behind whatever reverse proxy (nginx/Caddy) is already fronting the other
-      system on the same box — a distinct path prefix or subdomain, TLS
-      terminated there, never a second TLS setup for this app alone.
-- [ ] **Render:** nothing to do for a first pass — Render provides a
+- [x] The real target server already runs another dashboard (HARCJ /
+      Streamlit) with **no public URL, no reverse proxy, no TLS** — access is
+      SSH-tunnel-only, with the app bound to `127.0.0.1`. This pipeline
+      matches that exactly: `exchange-events-web.service` binds
+      `127.0.0.1:8080` (fixed 2026-07-23 — it previously defaulted to
+      `0.0.0.0`), so it's only reachable the same way the existing dashboard
+      is:
+      ```bash
+      ssh -L 8080:127.0.0.1:8080 <user>@<host>
+      # then browse http://localhost:8080/ locally
+      ```
+- [ ] Render path (if ever used instead): nothing to do — Render provides a
       `*.onrender.com` subdomain with HTTPS automatically.
 
 ## 6. Post-deploy verification
