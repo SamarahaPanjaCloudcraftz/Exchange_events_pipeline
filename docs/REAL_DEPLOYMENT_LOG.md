@@ -467,3 +467,23 @@ the normal post-deploy path, verified directly (a real clone already at the
 latest commit correctly showed the full report instead of just the
 one-line "nothing to deploy" message). A plain re-run of `redeploy.sh` is
 now a legitimate way to check current timer state at any time.
+
+## 2026-07-23 — Real bug caught live: --value unsupported on this host's systemctl
+
+User enabled both timers and re-ran redeploy.sh; the report showed both as
+`active, enabled` but with "next fire: not scheduled" for both -- a real
+contradiction, since an active timer must have a scheduled next fire.
+Diagnosed directly: `systemctl list-timers` on the real server showed the
+correct, real next-fire times (18:00:00 ingest, 18:10:00 alert, correctly
+staggered) -- confirming the timers themselves were fine, and the bug was
+in the report's own query. Root cause: `systemctl show ... --value` most
+likely isn't supported by this host's older systemctl (systemd 219); it
+silently failed, and the `|| true` fallback swallowed the error, reporting
+empty (misread as "not scheduled") even though the timer was genuinely
+correctly scheduled the whole time.
+
+Fixed by parsing the plain `Key=Value` output of `systemctl show` instead
+of depending on `--value`, which is universally supported. Re-verified
+locally with a real active/inactive timer pair: active one now correctly
+shows its real next-fire time, inactive one still correctly shows "not
+scheduled".
