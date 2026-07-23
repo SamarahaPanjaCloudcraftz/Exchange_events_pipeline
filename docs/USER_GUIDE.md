@@ -50,7 +50,8 @@ filter (default 1) and, on the calendar, an Upcoming/All-dates toggle.
 - **Exchange Events tab is blank/unreachable, HARCJ tab is fine** — almost
   always the tunnel missing the `-L 8502:127.0.0.1:8502` forward above.
 - **Data looks stale** — the pipeline re-fetches on its own schedule (every 6h)
-  and re-evaluates alerts every 15 minutes; it isn't tied to page refreshes.
+  and re-evaluates alerts 10 minutes later, same cadence; it isn't tied to
+  page refreshes.
 - **Anything else** — see [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)
   §6 (post-deploy verification) or [DECISIONS.md](DECISIONS.md) for why any
   particular behavior is the way it is.

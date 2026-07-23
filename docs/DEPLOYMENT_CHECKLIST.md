@@ -65,8 +65,12 @@ what's left is copying it onto the actual server and filling in real paths.
       host-specific trade-off, not a general recommendation.
 - [x] `deploy/systemd/exchange-events-ingest.{service,timer}` +
       `exchange-events-alert.{service,timer}` — one-shot units on systemd
-      timers, same 6h/15min cadence already documented in README.md's
-      "Scheduling" section. **Deliberately timers, not a crontab entry**: the
+      timers, same 6h ingest / 6h-staggered-10min alert cadence documented
+      in README.md's "Scheduling" section (changed 2026-07-23 from an
+      initial 15min alert cadence — severity is a pure function of
+      days-until-event, which only changes once per calendar day, so
+      alert never needed to run more often than ingest does; see
+      REAL_DEPLOYMENT_LOG.md). **Deliberately timers, not a crontab entry**: the
       real target server has exactly one existing cron job (root's crontab,
       restarting the other dashboard's schedulers at 00:01 CT) — adding to
       that same crontab would risk an edit disturbing that line. Systemd
@@ -115,7 +119,8 @@ what's left is copying it onto the actual server and filling in real paths.
       not its own scheduler. Two options, reuse the cadence already written
       down in the README:
       - Render **Cron Jobs** running `exchange-events ingest --incremental`
-        (every 6h) and `exchange-events alert` (every 15min) directly, or
+        (every 6h) and `exchange-events alert` (every 6h, 10min offset)
+        directly, or
       - a scheduled job that just `curl -X POST` the already-built
         `/api/v1/ingest/trigger` endpoint instead, if running the CLI directly
         isn't convenient on the chosen job type.

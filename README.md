@@ -75,9 +75,14 @@ Per the design doc, the ingestion/alert engines are plain callables — *somethi
 schedules them. A typical crontab:
 
 ```cron
-# Ingest every 6 hours, alert every 15 minutes, both logged.
-0 */6 * * *  cd /opt/exchange-events && exchange-events ingest --incremental >> /var/log/ee-ingest.log 2>&1
-*/15 * * * * cd /opt/exchange-events && exchange-events alert                >> /var/log/ee-alert.log  2>&1
+# Ingest every 6 hours; alert 10 min later, same cadence -- staggered so it
+# always evaluates freshly-ingested data instead of racing it. Every alert
+# rule's severity is a pure function of days-until-event (an integer day
+# count), which only changes once per calendar day; the only thing that
+# can produce a *new* alert intraday is ingest discovering something
+# already close, so alert doesn't need to run more often than ingest does.
+0 */6 * * *    cd /opt/exchange-events && exchange-events ingest --incremental >> /var/log/ee-ingest.log 2>&1
+10 */6 * * *   cd /opt/exchange-events && exchange-events alert                >> /var/log/ee-alert.log  2>&1
 ```
 
 Run `serve` under your process manager of choice (systemd, supervisor, a container

@@ -1,9 +1,16 @@
-# Matches the cadence already documented in README.md's "Scheduling" section.
+# Every 6 hours, staggered 10 minutes after exchange-events-ingest.timer (00:10,
+# 06:10, 12:10, 18:10) so alert always evaluates against freshly-ingested data
+# rather than racing it. Not run more often than that deliberately: every
+# proximity rule's severity is a pure function of days-until-event (an integer
+# day count), which can only change once per calendar day -- the only thing
+# that can produce a *new* alert intraday is ingest itself discovering
+# something already close, which this cadence catches within 6h of it
+# appearing. See docs/REAL_DEPLOYMENT_LOG.md for the reasoning.
 [Unit]
-Description=Run exchange-events alert every 15 minutes
+Description=Run exchange-events alert every 6 hours, 10 min after ingest
 
 [Timer]
-OnCalendar=*:0/15
+OnCalendar=*-*-* 0/6:10:00
 Persistent=true
 
 [Install]
