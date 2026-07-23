@@ -381,3 +381,32 @@ confirmation of this pipeline working live on the production server.
 **Still open**: ingest/alert timers remain stopped/disabled (from the
 earlier explicit pause) -- this ingest/alert run was manual, one-off.
 HARCJ's real `app.py` still not wired with the "Exchange Events" tab.
+
+## 2026-07-23 — redeploy.sh confirmed working end-to-end, unassisted
+
+Full arc of testing `scripts/redeploy.sh` for real, on the actual server:
+
+1. Added a small, visible test change (a highlighted banner on the XCME
+   tab) specifically to make a real redeploy observable in the browser,
+   not just in logs.
+2. First `redeploy.sh` run failed on the same `.env`-contamination bug
+   fixed earlier -- root cause: the server was still on commit `f735026`,
+   5 commits behind (missing both the re-exec and `.env`-hiding fixes) --
+   the earlier manual bypass hadn't actually reached the latest commit,
+   most likely because not everything was pushed to GitHub at that exact
+   moment. Confirmed via `git log HEAD..origin/main --oneline`.
+3. One more manual bypass (same pattern as before: checkout, install,
+   hide `.env`, test -- 453 passed, restore `.env`, init-db, restart) got
+   the server onto commit `5795637`, with both self-healing fixes finally
+   in place. No unit-file changes needed this time (nothing under
+   `deploy/systemd/` changed in this range).
+4. Confirmed the banner rendered live in the browser.
+5. **The real test**: removed the banner (commit `a6c3f51`, an ordinary
+   fresh change, not another bypass), pushed, and ran plain
+   `./scripts/redeploy.sh` on the server with no assistance. It completed
+   the full cycle on its own -- fetch, checkout, install, test gate
+   (`.env` safely hidden throughout), restart -- and the banner's removal
+   was confirmed live in the browser afterward.
+
+`scripts/redeploy.sh` is now confirmed to work end-to-end, unassisted, on
+the real production server.
