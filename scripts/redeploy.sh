@@ -86,9 +86,33 @@ if ! "${PIP}" install --quiet -e ".[dev]"; then
     exit 1
 fi
 
+# config/loader.py::load_config() defaults to reading .env from the CURRENT
+# DIRECTORY -- which is exactly where the real, production .env lives when
+# this script runs. Without this, every test that calls load_config() (i.e.
+# nearly all of them) would silently pick up real secrets/paths, including
+# EXCHANGE_EVENTS_SQLITE_PATH pointing at the REAL production database --
+# discovered directly: a reproduction showed a test reporting stale state
+# ("0 new alerts" instead of "1") because a prior run had already written
+# that exact alert into the real, shared database. Tests must never be able
+# to touch it. Hidden for the gate below, restored immediately after
+# (success or failure) and again via EXIT trap as a safety net.
+_env_hidden=0
+if [[ -f .env ]]; then
+    mv .env .env.redeploy_hidden
+    _env_hidden=1
+fi
+restore_env() {
+    if [[ "${_env_hidden}" -eq 1 && -f .env.redeploy_hidden ]]; then
+        mv .env.redeploy_hidden .env
+        _env_hidden=0
+    fi
+}
+trap restore_env EXIT
+
 log "running test suite (offline unit + integration + e2e)..."
 if ! "${PY}" -m pytest -q; then
     log "FAILED: tests did not pass on ${target_sha:0:12}. Reverting, NOT restarting the live service."
+    restore_env
     revert_to_previous
     "${PIP}" install --quiet --no-deps -e . >/dev/null 2>&1 || true
     exit 1
@@ -97,10 +121,13 @@ fi
 log "running lint + type-check..."
 if ! "${VENV_DIR}/bin/ruff" check src tests || ! "${VENV_DIR}/bin/mypy" src/exchange_events; then
     log "FAILED: ruff/mypy did not pass on ${target_sha:0:12}. Reverting, NOT restarting the live service."
+    restore_env
     revert_to_previous
     "${PIP}" install --quiet --no-deps -e . >/dev/null 2>&1 || true
     exit 1
 fi
+
+restore_env
 
 log "applying schema (idempotent -- safe every deploy)..."
 "${VENV_DIR}/bin/exchange-events" init-db
