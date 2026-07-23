@@ -60,6 +60,13 @@ if ! "${PIP}" install --quiet -r requirements.lock.txt; then
 fi
 "${PIP}" install --quiet --no-deps -e .
 
+log "installing test tooling (pytest/ruff/mypy) needed for the gate below..."
+if ! "${PIP}" install --quiet -e ".[dev]"; then
+    log "FAILED: test tooling install. Reverting."
+    revert_to_previous
+    exit 1
+fi
+
 log "running test suite (offline unit + integration + e2e)..."
 if ! "${PY}" -m pytest -q; then
     log "FAILED: tests did not pass on ${target_sha:0:12}. Reverting, NOT restarting the live service."
