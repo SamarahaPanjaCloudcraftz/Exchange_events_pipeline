@@ -1,0 +1,1137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exchange Events Dashboard</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:   #fcfcfb;
+    --page:        #f9f9f7;
+    --text-1:      #0b0b0b;
+    --text-2:      #52514e;
+    --text-muted:  #898781;
+    --grid:        #e1e0d9;
+    --border:      rgba(11,11,11,0.10);
+    /* categorical (event type), fixed order, never cycled */
+    --cat-holiday:  #2a78d6; /* blue */
+    --cat-dst:      #008300; /* green */
+    --cat-expiry:   #e87ba4; /* magenta */
+    --cat-econ:     #eda100; /* yellow */
+    /* status (alert severity), fixed, distinct from categorical */
+    --status-info:     #2a78d6;
+    --status-warning:  #fab219;
+    --status-critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --page: #0d0d0d;
+      --text-1: #ffffff; --text-2: #c3c2b7; --text-muted: #898781;
+      --grid: #2c2c2a; --border: rgba(255,255,255,0.10);
+      --cat-holiday: #3987e5; --cat-dst: #008300; --cat-expiry: #d55181; --cat-econ: #c98500;
+      --status-info: #3987e5; --status-warning: #fab219; --status-critical: #e66767;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --page: #0d0d0d;
+    --text-1: #ffffff; --text-2: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --border: rgba(255,255,255,0.10);
+    --cat-holiday: #3987e5; --cat-dst: #008300; --cat-expiry: #d55181; --cat-econ: #c98500;
+    --status-info: #3987e5; --status-warning: #fab219; --status-critical: #e66767;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page); color: var(--text-1);
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface-1);
+    flex-wrap: wrap; gap: 8px;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  nav button {
+    border: none; background: none; color: var(--text-2); font: inherit; font-size: 13px;
+    padding: 8px 12px; border-radius: 6px; cursor: pointer;
+  }
+  nav button.active { background: var(--page); color: var(--text-1); font-weight: 600; }
+  nav button:hover { color: var(--text-1); }
+  #outer-tabs button.active { background: var(--cat-holiday); color: #fff; }
+  .subnav {
+    margin: 0 0 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  #theme-toggle {
+    border: 1px solid var(--border); border-radius: 6px; background: var(--surface-1);
+    color: var(--text-2); font-size: 12px; padding: 6px 10px; cursor: pointer;
+  }
+  main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+  .outer-panel { display: none; }
+  .outer-panel.active { display: block; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 12px; color: var(--text-2); font-weight: 600; }
+  .tz-card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-left: 4px solid var(--status-warning); border-radius: 10px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .tz-card h2 { font-size: 14px; margin: 0 0 8px; color: var(--text-2); font-weight: 600; }
+  .tz-shift { font-size: 15px; font-weight: 600; }
+  .tz-detail { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+  .card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+  }
+  .card-header h2 { margin: 0; }
+  .card-header-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .toggle-group { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .toggle-group button {
+    border: none; background: var(--page); color: var(--text-2); font: inherit; font-size: 12px;
+    padding: 5px 10px; cursor: pointer;
+  }
+  .toggle-group button + button { border-left: 1px solid var(--border); }
+  .toggle-group button.active { background: var(--cat-holiday); color: #fff; }
+  .extra-toggle {
+    border: 1px solid var(--border); border-radius: 6px; background: var(--page);
+    color: var(--text-2); font: inherit; font-size: 12px; padding: 5px 10px; cursor: pointer;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--text-muted); font-weight: 500; font-size: 12px; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    font-weight: 600; color: #fff;
+  }
+  .badge-holiday { background: var(--cat-holiday); }
+  .badge-dst_change { background: var(--cat-dst); }
+  .badge-expiry { background: var(--cat-expiry); }
+  .badge-economic_release { background: var(--cat-econ); }
+  .badge-info { background: var(--status-info); }
+  .badge-warning { background: var(--status-warning); color: #1a1a19; }
+  .badge-critical { background: var(--status-critical); }
+  .muted { color: var(--text-muted); font-size: 12px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .month-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .month-nav button {
+    border: 1px solid var(--border); background: var(--page); color: var(--text-1);
+    border-radius: 6px; padding: 4px 10px; cursor: pointer; font: inherit;
+  }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .cal-day {
+    min-height: 64px; border: 1px solid var(--grid); border-radius: 6px; padding: 6px;
+    font-size: 12px;
+  }
+  .cal-day .daynum { color: var(--text-muted); margin-bottom: 4px; }
+  .cal-day .badge { display: block; margin-top: 2px; font-size: 10px; padding: 1px 6px; }
+  /* Instant CSS tooltip instead of the native `title` attribute — the browser's
+     built-in tooltip has a ~1s hover delay and is easy to miss entirely. */
+  .badge[data-tooltip] { position: relative; cursor: default; }
+  .badge[data-tooltip]:hover::after {
+    content: attr(data-tooltip);
+    position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+    margin-bottom: 4px; background: var(--text-1); color: var(--surface-1);
+    padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 400;
+    white-space: nowrap; z-index: 20; pointer-events: none;
+  }
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .exch-card { border: 1px solid var(--grid); border-radius: 8px; padding: 12px; }
+  .exch-card h3 { margin: 0 0 6px; font-size: 13px; }
+  .exch-tab-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 16px; }
+  .exch-tab-header h2 { margin: 0; font-size: 18px; }
+  .empty { color: var(--text-muted); font-size: 13px; padding: 8px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Exchange Events Dashboard</h1>
+  <nav id="outer-tabs">
+    <button data-outer="consolidated" class="active">Consolidated View</button>
+    <!-- one button per exchange injected here by JS from /api/v1/exchanges -->
+  </nav>
+  <button id="theme-toggle" type="button">Toggle theme</button>
+</header>
+
+<main>
+  <!-- ===================== Consolidated View (all exchanges together) ===================== -->
+  <div id="outer-panel-consolidated" class="outer-panel active">
+    <nav id="tabs" class="subnav">
+      <button data-panel="calendar" class="active">Calendar</button>
+      <button data-panel="upcoming">Upcoming</button>
+      <button data-panel="releases">Economic Releases</button>
+      <button data-panel="exchanges">Exchanges</button>
+      <button data-panel="alerts">Alerts</button>
+    </nav>
+
+    <!-- Calendar -->
+    <section id="panel-calendar" class="panel active">
+      <div class="card">
+        <div class="card-header">
+          <div class="month-nav">
+            <button id="cal-prev" type="button">&larr;</button>
+            <strong id="cal-label"></strong>
+            <button id="cal-next" type="button">&rarr;</button>
+          </div>
+          <div class="toggle-group">
+            <button type="button" class="cal-toggle active" data-key="consolidated"
+                    data-mode="upcoming">Upcoming</button>
+            <button type="button" class="cal-toggle" data-key="consolidated"
+                    data-mode="all">All dates</button>
+          </div>
+        </div>
+        <div id="cal-grid" class="cal-grid"></div>
+      </div>
+    </section>
+
+    <!-- Upcoming -->
+    <section id="panel-upcoming" class="panel">
+      <div class="card">
+        <h2>Next 14 days</h2>
+        <table>
+          <thead><tr><th>Date</th><th>Type</th><th>Exchange</th><th>Description</th></tr></thead>
+          <tbody id="upcoming-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Economic releases -->
+    <section id="panel-releases" class="panel">
+      <div class="card">
+        <div class="card-header">
+          <h2>Economic releases</h2>
+          <div class="card-header-controls">
+            <div class="toggle-group">
+              <button type="button" class="rel-toggle active" data-toggle="date" data-mode="upcoming"
+                      data-table-key="consolidated:core" data-base-key="consolidated"
+                      data-target="releases-body" data-core-only="true">Upcoming</button>
+              <button type="button" class="rel-toggle" data-toggle="date" data-mode="all"
+                      data-table-key="consolidated:core" data-base-key="consolidated"
+                      data-target="releases-body" data-core-only="true">All dates</button>
+            </div>
+            <div class="toggle-group">
+              <button type="button" class="rel-toggle active" data-toggle="code" data-mode="latest"
+                      data-table-key="consolidated:core" data-base-key="consolidated"
+                      data-target="releases-body" data-core-only="true">Latest</button>
+              <button type="button" class="rel-toggle" data-toggle="code" data-mode="all"
+                      data-table-key="consolidated:core" data-base-key="consolidated"
+                      data-target="releases-body" data-core-only="true">All</button>
+            </div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Time</th><th>Release</th><th>Forecast</th><th>Previous</th>
+                <th>Actual</th><th>Surprise</th></tr>
+          </thead>
+          <tbody id="releases-body"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Additional Indicators <span class="muted">(GDP, Unemployment Rate, Fed Funds Effective Rate)</span></h2>
+          <div class="card-header-controls">
+            <div class="toggle-group">
+              <button type="button" class="rel-toggle active" data-toggle="date" data-mode="upcoming"
+                      data-table-key="consolidated:extra" data-base-key="consolidated"
+                      data-target="extra-consolidated-body" data-core-only="false">Upcoming</button>
+              <button type="button" class="rel-toggle" data-toggle="date" data-mode="all"
+                      data-table-key="consolidated:extra" data-base-key="consolidated"
+                      data-target="extra-consolidated-body" data-core-only="false">All dates</button>
+            </div>
+            <div class="toggle-group">
+              <button type="button" class="rel-toggle active" data-toggle="code" data-mode="latest"
+                      data-table-key="consolidated:extra" data-base-key="consolidated"
+                      data-target="extra-consolidated-body" data-core-only="false">Latest</button>
+              <button type="button" class="rel-toggle" data-toggle="code" data-mode="all"
+                      data-table-key="consolidated:extra" data-base-key="consolidated"
+                      data-target="extra-consolidated-body" data-core-only="false">All</button>
+            </div>
+            <button type="button" class="extra-toggle" data-wrap="extra-consolidated-wrap">Show</button>
+          </div>
+        </div>
+        <div id="extra-consolidated-wrap" style="display:none;">
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Time</th><th>Release</th><th>Forecast</th><th>Previous</th>
+                  <th>Actual</th><th>Surprise</th></tr>
+            </thead>
+            <tbody id="extra-consolidated-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Exchange status -->
+    <section id="panel-exchanges" class="panel">
+      <div class="card">
+        <h2>Exchange status</h2>
+        <div id="exchanges-grid" class="grid-2"></div>
+      </div>
+    </section>
+
+    <!-- Alerts -->
+    <section id="panel-alerts" class="panel">
+      <div class="card">
+        <div class="card-header">
+          <h2>Recent alerts</h2>
+          <div class="card-header-controls">
+            <label class="muted" for="alerts-days-input">Show next</label>
+            <input type="number" id="alerts-days-input" class="alerts-days-input" data-key="consolidated"
+                   data-target="alerts-body" min="0" max="365" value="1" style="width:56px;">
+            <span class="muted">day(s)</span>
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>Severity</th><th>Title</th><th>Triggered</th></tr></thead>
+          <tbody id="alerts-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===================== Per-exchange tabs (injected by JS) ===================== -->
+  <div id="exchange-panels"></div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  const API = "/api/v1";
+  const EVENT_TYPE_LABEL = {
+    holiday: "Holiday", dst_change: "DST Change", expiry: "Expiry",
+    economic_release: "Econ. Release",
+  };
+  const COUNTRY_NAME = { US: "United States", IN: "India", KR: "South Korea" };
+  // Each release is shown in its own market's local time (e.g. ET for US releases)
+  // with an explicit label — never an unlabeled, ambiguous time. The label is
+  // hardcoded rather than asking Intl for a "short" zone name: that rendering is
+  // inconsistent across browsers (some show "EDT", others the raw offset "GMT-4"
+  // — same instant, less recognizable label), so we own the string ourselves.
+  const COUNTRY_TIMEZONE = { US: "America/New_York", IN: "Asia/Kolkata", KR: "Asia/Seoul" };
+  const COUNTRY_TZ_LABEL = { US: "ET", IN: "IST", KR: "KST" };
+  const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+    "August", "September", "October", "November", "December"];
+
+  // --- theme toggle ------------------------------------------------------
+  const root = document.documentElement;
+  const savedTheme = localStorage.getItem("ee-theme");
+  if (savedTheme) root.setAttribute("data-theme", savedTheme);
+  document.getElementById("theme-toggle").addEventListener("click", () => {
+    const current = root.getAttribute("data-theme") ||
+      (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const next = current === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    localStorage.setItem("ee-theme", next);
+  });
+
+  // --- outer tab switching (Consolidated View vs. one tab per exchange) ------------------
+  document.getElementById("outer-tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-outer]");
+    if (!btn) return;
+    document.querySelectorAll("#outer-tabs button").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".outer-panel").forEach((p) => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("outer-panel-" + btn.dataset.outer).classList.add("active");
+  });
+
+  // --- inner tab switching (within Consolidated View) -------------------------------------
+  document.getElementById("tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-panel]");
+    if (!btn) return;
+    document.querySelectorAll("#tabs button").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll("#outer-panel-consolidated .panel").forEach((p) => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("panel-" + btn.dataset.panel).classList.add("active");
+  });
+
+  async function getJSON(path) {
+    const resp = await fetch(API + path);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error((body.error && body.error.message) || ("HTTP " + resp.status));
+    }
+    return resp.json();
+  }
+
+  function badge(eventType, tooltip) {
+    const attr = tooltip
+      ? ` data-tooltip="${String(tooltip).replace(/"/g, "&quot;")}"` : "";
+    return `<span class="badge badge-${eventType}"${attr}>${EVENT_TYPE_LABEL[eventType] || eventType}</span>`;
+  }
+
+  function eventDescription(e) {
+    if (e.event_type === "holiday") return e.holiday_name;
+    if (e.event_type === "expiry") return `${e.underlying} ${e.series} (${e.instrument_type})`;
+    if (e.event_type === "economic_release") return e.release_name;
+    if (e.event_type === "dst_change") return e.iana_zone;
+    return "";
+  }
+  function fmt(v) { return (v === null || v === undefined) ? "&mdash;" : v; }
+  // Displayed in the viewer's own local timezone (P5: store UTC, display local) —
+  // most economic-release sources only carry a date, not a time, so this is
+  // "&mdash;" whenever timestamp_utc wasn't set.
+  function releaseTime(e) {
+    if (!e.timestamp_utc) return "&mdash;";
+    const d = new Date(e.timestamp_utc);
+    const tz = COUNTRY_TIMEZONE[e.country];
+    if (tz) {
+      // e.g. "8:30 AM ET" — that release's own market timezone, hardcoded label
+      // (not Intl's "short" name, which renders inconsistently across browsers).
+      const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: tz });
+      return `${time} ${COUNTRY_TZ_LABEL[e.country] || tz}`;
+    }
+    // Unknown market timezone — never show an unlabeled time, say whose clock it is.
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " (your local time)";
+  }
+  function todayISO() { return new Date().toISOString().slice(0, 10); }
+  function addDaysISO(days) {
+    const d = new Date(todayISO() + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  // --- Next DST shift for an exchange's own timezone -----------------------------------
+  // DST events aren't tied to an exchange (only an IANA zone — same as economic
+  // releases only carrying a country), so this filters client-side rather than via a
+  // server-side exchange query param, matching that established pattern. A strategy's
+  // session-time parameters need to track the *exchange's* clock, not the viewer's, so
+  // this is shown per-exchange rather than assuming everyone means their own timezone.
+  // Named abbreviations (CST/CDT, EST/EDT, ...) are shown instead of/alongside raw UTC
+  // offsets — "UTC-5 -> UTC-6" is easy to misread which direction is which; "CDT -> CST"
+  // isn't. Zones with no DST (Asia/Kolkata, Asia/Seoul) simply never appear here since
+  // the iana_tz adapter never emits a transition for them.
+  const ZONE_ABBR = {
+    "America/New_York": { standard: "EST", daylight: "EDT" },
+    "America/Chicago": { standard: "CST", daylight: "CDT" },
+    "Europe/London": { standard: "GMT", daylight: "BST" },
+    "Europe/Berlin": { standard: "CET", daylight: "CEST" },
+  };
+
+  async function nextDstShiftInfo(timezone) {
+    if (!timezone) return { headline: "Unknown", detail: "no timezone configured" };
+    try {
+      const events = await getJSON(`/events?event_types=dst_change&date_from=${todayISO()}`);
+      const upcoming = events
+        .filter((e) => e.iana_zone === timezone)
+        .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))[0];
+      if (!upcoming) {
+        return { headline: "None scheduled", detail: `${timezone} has no upcoming DST transition` };
+      }
+      const startingDst = upcoming.metadata && upcoming.metadata.transition === "start";
+      const abbr = ZONE_ABBR[timezone];
+      const fromAbbr = abbr ? (startingDst ? abbr.standard : abbr.daylight) : upcoming.old_utc_offset;
+      const toAbbr = abbr ? (startingDst ? abbr.daylight : abbr.standard) : upcoming.new_utc_offset;
+      return {
+        headline: `${upcoming.date} &mdash; ${fromAbbr} &rarr; ${toAbbr}`,
+        detail: `${upcoming.old_utc_offset} &rarr; ${upcoming.new_utc_offset} &middot; ${timezone}`,
+      };
+    } catch (err) {
+      return { headline: "Error", detail: err.message };
+    }
+  }
+
+  // --- Economic-release filtering: two independent toggles per table ---------------------
+  // "Upcoming"/"All dates" filters by date (default: upcoming-only, so history doesn't
+  // dominate). "Latest"/"All" filters by release_code (default: Latest) — some FRED series
+  // update daily (e.g. FOMC's DFEDTARU, or the bonus FEDFUNDS indicator) rather than
+  // per-release, so "Latest" collapses each code to the single row closest to today
+  // (soonest upcoming, or most recent past, whichever is nearer) instead of flooding the
+  // table with hundreds of daily observations; "All" shows every row if drilling in is
+  // actually wanted. The two toggles combine (4 states), and both are computed client-side
+  // from one cached fetch per table — no refetch on toggle.
+  // "Core" is the 7 releases actually asked for (NFP/CPI/PPI/PCE/JOLTS/FOMC/ISM); anything
+  // else FRED happens to carry (GDP, Unemployment Rate, Fed Funds effective rate) is kept
+  // out of that table and shown only in the separate, collapsed-by-default "Additional
+  // Indicators" card.
+  const CORE_RELEASE_CODES = new Set(["NFP", "CPI", "PPI", "PCE", "JOLTS", "FOMC", "ISM_PMI"]);
+  const releasesCache = {}; // base-key (e.g. "consolidated", "ex-XCME") -> full event list
+  const dateMode = {};      // table-key (base-key + ":core"/":extra") -> "upcoming" | "all"
+  const codeMode = {};      // table-key -> "latest" | "all"
+
+  function releaseRowsHTML(events) {
+    if (!events.length) return `<tr><td colspan="7" class="empty">No releases found.</td></tr>`;
+    return events.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+      .map((e) => `
+        <tr>
+          <td class="num">${e.date}</td>
+          <td class="num">${releaseTime(e)}</td>
+          <td>${e.release_name} <span class="muted">(${e.release_code})</span></td>
+          <td class="num">${fmt(e.forecast)}</td>
+          <td class="num">${fmt(e.previous)}</td>
+          <td class="num">${fmt(e.actual)}</td>
+          <td class="num">${fmt(e.surprise)}</td>
+        </tr>`).join("");
+  }
+
+  function renderReleasesTable(tbodyId, baseKey, tableKey, coreOnly) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    let events = (releasesCache[baseKey] || [])
+      .filter((e) => CORE_RELEASE_CODES.has(e.release_code) === coreOnly);
+    if ((dateMode[tableKey] || "upcoming") === "upcoming") {
+      events = events.filter((e) => e.date >= todayISO());
+    }
+    if ((codeMode[tableKey] || "latest") === "latest") {
+      // "Latest" = closest to today (by absolute day distance), not the furthest-out
+      // future date — so under "All dates" it surfaces the next/most-recent occurrence
+      // per code instead of e.g. a schedule entry many months from now.
+      const today = new Date(todayISO() + "T00:00:00Z");
+      const dist = (iso) => Math.abs(new Date(iso + "T00:00:00Z") - today);
+      const closestByCode = new Map();
+      for (const e of events) {
+        const prev = closestByCode.get(e.release_code);
+        if (!prev || dist(e.date) < dist(prev.date)) closestByCode.set(e.release_code, e);
+      }
+      events = Array.from(closestByCode.values());
+    }
+    tbody.innerHTML = releaseRowsHTML(events);
+  }
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".rel-toggle");
+    if (btn) {
+      const { toggle, mode, tableKey, baseKey, target, coreOnly } = btn.dataset;
+      if (toggle === "date") dateMode[tableKey] = mode; else codeMode[tableKey] = mode;
+      document.querySelectorAll(
+        `.rel-toggle[data-table-key="${tableKey}"][data-toggle="${toggle}"]`
+      ).forEach((b) => b.classList.toggle("active", b === btn));
+      renderReleasesTable(target, baseKey, tableKey, coreOnly === "true");
+      return;
+    }
+    const extraBtn = e.target.closest(".extra-toggle");
+    if (extraBtn) {
+      const wrap = document.getElementById(extraBtn.dataset.wrap);
+      const shown = wrap.style.display !== "none";
+      wrap.style.display = shown ? "none" : "";
+      extraBtn.textContent = shown ? "Show" : "Hide";
+    }
+  });
+
+  // ============================ Consolidated View ============================
+
+  // --- Upcoming ------------------------------------------------------------
+  async function loadUpcoming() {
+    const tbody = document.getElementById("upcoming-body");
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">Loading…</td></tr>`;
+    try {
+      const events = await getJSON("/events/upcoming?days=14");
+      if (!events.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="empty">No upcoming events.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = events.map((e) => `
+        <tr>
+          <td class="num">${e.date}</td>
+          <td>${badge(e.event_type)}</td>
+          <td>${e.exchange || "&mdash;"}</td>
+          <td>${eventDescription(e)}</td>
+        </tr>`).join("");
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="4" class="empty">Error: ${err.message}</td></tr>`;
+    }
+  }
+
+  // --- Economic releases -----------------------------------------------------
+  async function loadReleases() {
+    const tbody = document.getElementById("releases-body");
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">Loading…</td></tr>`;
+    try {
+      releasesCache["consolidated"] = await getJSON("/events?event_types=economic_release");
+      renderReleasesTable("releases-body", "consolidated", "consolidated:core", true);
+      renderReleasesTable("extra-consolidated-body", "consolidated", "consolidated:extra", false);
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty">Error: ${err.message}</td></tr>`;
+    }
+  }
+
+  // --- Exchange status (overview across all exchanges) ---------------------------
+  async function loadExchanges() {
+    const grid = document.getElementById("exchanges-grid");
+    grid.innerHTML = `<div class="empty">Loading…</div>`;
+    try {
+      const exchanges = await getJSON("/exchanges");
+      const today = todayISO();
+      const cards = await Promise.all(exchanges.map(async (ex) => {
+        const [holidays, expiries, tz] = await Promise.all([
+          getJSON(`/events?exchanges=${ex.mic}&event_types=holiday&date_from=${today}&limit=1`),
+          getJSON(`/events?exchanges=${ex.mic}&event_types=expiry&date_from=${today}&limit=1`),
+          nextDstShiftInfo(ex.timezone),
+        ]);
+        const nextHoliday = holidays[0]
+          ? `${holidays[0].date} &mdash; ${holidays[0].holiday_name}` : "None scheduled";
+        const nextExpiry = expiries[0]
+          ? `${expiries[0].date} &mdash; ${expiries[0].underlying}` : "None scheduled";
+        return `
+          <div class="exch-card">
+            <h3>${ex.mic}</h3>
+            <div class="muted">${ex.name}</div>
+            <div style="margin-top:8px;"><strong>Next holiday:</strong><br>${nextHoliday}</div>
+            <div style="margin-top:6px;"><strong>Next expiry:</strong><br>${nextExpiry}</div>
+            <div class="tz-card" style="margin:8px 0 0; padding:8px 10px;">
+              <div class="muted" style="font-size:11px; text-transform:uppercase;">Next Timezone Shift</div>
+              <div class="tz-shift">${tz.headline}</div>
+              <div class="tz-detail">${tz.detail}</div>
+            </div>
+          </div>`;
+      }));
+      grid.innerHTML = cards.join("");
+    } catch (err) {
+      grid.innerHTML = `<div class="empty">Error: ${err.message}</div>`;
+    }
+  }
+
+  // --- Alerts (all exchanges) --------------------------------------------------------
+  // "Show next N days" input (default 1) filters already-fetched alerts client-side by
+  // the underlying event's own date (today..today+N) — same no-refetch pattern as the
+  // calendar/releases toggles. Purely a display filter: it does NOT change the server-
+  // side rule lookahead (fixed via config/defaults.toml's *_lookahead_days) — a WARNING
+  // alert still only ever fires exactly N days before its event; this control just
+  // decides which already-fired alerts are shown.
+  const alertsDaysFilter = {}; // key ("consolidated" | "ex-<MIC>") -> integer days
+  const alertsCache = {};      // key -> raw alerts list (already exchange/country filtered)
+
+  function alertRowsHTML(alerts) {
+    return alerts.map((a) => `
+      <tr>
+        <td><span class="badge badge-${a.severity}">${a.severity.toUpperCase()}</span></td>
+        <td>${a.title}</td>
+        <td class="num">${a.triggered_at}</td>
+      </tr>`).join("");
+  }
+
+  function renderAlertsTable(tbodyId, key, emptyMessage) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    const days = alertsDaysFilter[key] ?? 1;
+    const cutoff = addDaysISO(days);
+    const today = todayISO();
+    const alerts = (alertsCache[key] || []).filter((a) => {
+      if (!a.event || !a.event.date) return true;
+      return a.event.date >= today && a.event.date <= cutoff;
+    });
+    tbody.innerHTML = alerts.length ? alertRowsHTML(alerts)
+      : `<tr><td colspan="3" class="empty">${emptyMessage}</td></tr>`;
+  }
+
+  document.addEventListener("input", (e) => {
+    const input = e.target.closest(".alerts-days-input");
+    if (!input) return;
+    let days = parseInt(input.value, 10);
+    if (!Number.isFinite(days) || days < 0) days = 0;
+    alertsDaysFilter[input.dataset.key] = days;
+    const emptyMessage = input.dataset.key === "consolidated"
+      ? "No alerts yet." : "No alerts for this exchange.";
+    renderAlertsTable(input.dataset.target, input.dataset.key, emptyMessage);
+  });
+
+  async function loadAlerts() {
+    const tbody = document.getElementById("alerts-body");
+    tbody.innerHTML = `<tr><td colspan="3" class="empty">Loading…</td></tr>`;
+    try {
+      alertsCache["consolidated"] = await getJSON("/alerts?limit=50");
+      renderAlertsTable("alerts-body", "consolidated", "No alerts yet.");
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="3" class="empty">Error: ${err.message}</td></tr>`;
+    }
+  }
+
+  // --- Calendar (all exchanges) --------------------------------------------------------
+  let calYear, calMonth; // 1-indexed month
+
+  // Calendar "Upcoming"/"All dates" toggle — defaults to upcoming-only (today
+  // forward) so the calendar reads as a lean "do I even need to look at the rest
+  // of the dashboard today" summary, not a full history. Re-renders from cached
+  // data client-side, same no-refetch pattern as the Economic Releases toggles.
+  const calendarDateMode = {}; // key -> "upcoming" | "all"
+  const calendarCache = {};    // key -> { gridEl, year, month, data, filterMic, filterCountry, filterTimezone }
+
+  function rerenderCalendar(key) {
+    const c = calendarCache[key];
+    if (!c) return;
+    const upcomingOnly = (calendarDateMode[key] || "upcoming") === "upcoming";
+    renderCalendarGrid(
+      c.gridEl, c.year, c.month, c.data, c.filterMic, c.filterCountry, c.filterTimezone, upcomingOnly
+    );
+  }
+
+  document.addEventListener("click", (e) => {
+    const calBtn = e.target.closest(".cal-toggle");
+    if (!calBtn) return;
+    const key = calBtn.dataset.key;
+    calendarDateMode[key] = calBtn.dataset.mode;
+    document.querySelectorAll(`.cal-toggle[data-key="${key}"]`)
+      .forEach((b) => b.classList.toggle("active", b === calBtn));
+    rerenderCalendar(key);
+  });
+
+  async function loadCalendar() {
+    document.getElementById("cal-label").textContent = `${MONTHS[calMonth - 1]} ${calYear}`;
+    const grid = document.getElementById("cal-grid");
+    grid.innerHTML = `<div class="empty">Loading…</div>`;
+    try {
+      const data = await getJSON(`/calendar/${calYear}/${calMonth}`);
+      calendarCache["consolidated"] = { gridEl: grid, year: calYear, month: calMonth, data, filterMic: null };
+      rerenderCalendar("consolidated");
+    } catch (err) {
+      grid.innerHTML = `<div class="empty">Error: ${err.message}</div>`;
+    }
+  }
+
+  /** Shared calendar-grid renderer. `filterMic` narrows to one exchange when set —
+   * economic releases never carry an `exchange` (only a `country`, same as the
+   * Releases card and Alerts filter elsewhere), so they're matched by `filterCountry`
+   * instead, otherwise a per-exchange calendar would silently drop them entirely. */
+  // The per-exchange calendar is a deliberately narrow "one-look summary" — only
+  // holidays, this exchange's own DST shifts, ES/NQ expiries (the flagship
+  // contracts; the Expiry Lookup card below still covers all 11 products), and
+  // the 7 core economic releases (not the bonus GDP/UNRATE/FEDFUNDS indicators).
+  // The intent is "does the user even need to look at the rest of the dashboard
+  // today", so anything not immediately decision-relevant is left out.
+  //
+  // The SAME content restrictions (not just the exchange-specific narrowing) also
+  // apply to the Consolidated calendar -- it should never show a category of event
+  // that every per-exchange calendar deliberately excludes as clutter (e.g. non-ES/NQ
+  // expiries, non-core economic releases). Consolidated combines exchanges, it
+  // doesn't get to skip the same decluttering each of them already applies.
+  const CALENDAR_EXPIRY_UNDERLYINGS = new Set(["ES", "NQ"]);
+  // Mirrors domain/exchange_zones.py's EXCHANGE_TIMEZONES values -- keeps DST badges
+  // limited to timezones that actually belong to one of our exchanges, not iana_tz's
+  // extra reference zones (America/New_York, Europe/London, Europe/Berlin).
+  const CONFIGURED_EXCHANGE_TIMEZONES = new Set(["Asia/Kolkata", "Asia/Seoul", "America/Chicago"]);
+
+  function renderCalendarGrid(
+    gridEl, year, month, data, filterMic, filterCountry, filterTimezone, upcomingOnly
+  ) {
+    const firstDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const today = todayISO();
+    let html = DOW.map((d) => `<div class="muted" style="text-align:center;">${d}</div>`).join("");
+    for (let i = 0; i < firstDow; i++) html += `<div></div>`;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      let dayEvents = (upcomingOnly && iso < today) ? [] : (data.days[iso] || []);
+      dayEvents = dayEvents.filter((e) => {
+        // Content restrictions apply unconditionally (Consolidated included) --
+        // see the comment above CALENDAR_EXPIRY_UNDERLYINGS.
+        if (e.event_type === "expiry" && !CALENDAR_EXPIRY_UNDERLYINGS.has(e.underlying)) {
+          return false;
+        }
+        if (e.event_type === "economic_release" && !CORE_RELEASE_CODES.has(e.release_code)) {
+          return false;
+        }
+        if (e.event_type === "dst_change" && !CONFIGURED_EXCHANGE_TIMEZONES.has(e.iana_zone)) {
+          return false;
+        }
+        if (!filterMic) return true; // Consolidated: no further per-exchange narrowing
+        if (e.event_type === "holiday") return e.exchange === filterMic;
+        if (e.event_type === "expiry") return e.exchange === filterMic;
+        if (e.event_type === "economic_release") return e.country === filterCountry;
+        if (e.event_type === "dst_change") return e.iana_zone === filterTimezone;
+        return false;
+      });
+      const badges = dayEvents.map((e) => badge(e.event_type, eventDescription(e))).join("");
+      html += `<div class="cal-day"><div class="daynum">${day}</div>${badges}</div>`;
+    }
+    gridEl.innerHTML = html;
+  }
+
+  document.getElementById("cal-prev").addEventListener("click", () => {
+    calMonth -= 1;
+    if (calMonth < 1) { calMonth = 12; calYear -= 1; }
+    loadCalendar();
+  });
+  document.getElementById("cal-next").addEventListener("click", () => {
+    calMonth += 1;
+    if (calMonth > 12) { calMonth = 1; calYear += 1; }
+    loadCalendar();
+  });
+
+  // ============================ Per-exchange tabs ============================
+  // Built dynamically from /api/v1/exchanges so a newly-configured exchange gets
+  // its own tab automatically, with no dashboard code changes (P4).
+
+  const exchangeCalState = {}; // mic -> { year, month }
+
+  function exchangePanelHTML(ex) {
+    const mic = ex.mic;
+    const countryLabel = ex.country ? (COUNTRY_NAME[ex.country] || ex.country) : null;
+    // Economic releases aren't tied to an exchange, only a country (e.g. NFP/CPI
+    // are US releases, not "CME events") — shown here filtered by the exchange's
+    // country so any other exchange in the same country gets the same section
+    // automatically, with no per-exchange code (P4).
+    const releasesCard = countryLabel ? `
+      <div class="card">
+        <div class="card-header">
+          <h2>Economic Releases (${countryLabel})</h2>
+          <div class="card-header-controls">
+            <div class="toggle-group">
+              <button type="button" class="rel-toggle active" data-toggle="date" data-mode="upcoming"
+                      data-table-key="ex-${mic}:core" data-base-key="ex-${mic}"
+                      data-target="ex-${mic}-releases-body" data-core-only="true">Upcoming</button>
+              <button type="button" class="rel-toggle" data-toggle="date" data-mode="all"
+                      data-table-key="ex-${mic}:core" data-base-key="ex-${mic}"
+                      data-target="ex-${mic}-releases-body" data-core-only="true">All dates</button>
+            </div>
+            <div class="toggle-group">
+              <button type="button" class="rel-toggle active" data-toggle="code" data-mode="latest"
+                      data-table-key="ex-${mic}:core" data-base-key="ex-${mic}"
+                      data-target="ex-${mic}-releases-body" data-core-only="true">Latest</button>
+              <button type="button" class="rel-toggle" data-toggle="code" data-mode="all"
+                      data-table-key="ex-${mic}:core" data-base-key="ex-${mic}"
+                      data-target="ex-${mic}-releases-body" data-core-only="true">All</button>
+            </div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Time</th><th>Release</th><th>Forecast</th><th>Previous</th>
+                <th>Actual</th><th>Surprise</th></tr>
+          </thead>
+          <tbody id="ex-${mic}-releases-body"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Additional Indicators <span class="muted">(GDP, Unemployment Rate, Fed Funds Effective Rate)</span></h2>
+          <div class="card-header-controls">
+            <div class="toggle-group">
+              <button type="button" class="rel-toggle active" data-toggle="date" data-mode="upcoming"
+                      data-table-key="ex-${mic}:extra" data-base-key="ex-${mic}"
+                      data-target="extra-ex-${mic}-body" data-core-only="false">Upcoming</button>
+              <button type="button" class="rel-toggle" data-toggle="date" data-mode="all"
+                      data-table-key="ex-${mic}:extra" data-base-key="ex-${mic}"
+                      data-target="extra-ex-${mic}-body" data-core-only="false">All dates</button>
+            </div>
+            <div class="toggle-group">
+              <button type="button" class="rel-toggle active" data-toggle="code" data-mode="latest"
+                      data-table-key="ex-${mic}:extra" data-base-key="ex-${mic}"
+                      data-target="extra-ex-${mic}-body" data-core-only="false">Latest</button>
+              <button type="button" class="rel-toggle" data-toggle="code" data-mode="all"
+                      data-table-key="ex-${mic}:extra" data-base-key="ex-${mic}"
+                      data-target="extra-ex-${mic}-body" data-core-only="false">All</button>
+            </div>
+            <button type="button" class="extra-toggle" data-wrap="extra-ex-${mic}-wrap">Show</button>
+          </div>
+        </div>
+        <div id="extra-ex-${mic}-wrap" style="display:none;">
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Time</th><th>Release</th><th>Forecast</th><th>Previous</th>
+                  <th>Actual</th><th>Surprise</th></tr>
+            </thead>
+            <tbody id="extra-ex-${mic}-body"></tbody>
+          </table>
+        </div>
+      </div>` : "";
+    return `
+      <div class="exch-tab-header">
+        <h2>${ex.name}</h2>
+        <span class="muted">(${mic})</span>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="month-nav">
+            <button type="button" class="ex-cal-prev" data-mic="${mic}">&larr;</button>
+            <strong id="ex-${mic}-cal-label"></strong>
+            <button type="button" class="ex-cal-next" data-mic="${mic}">&rarr;</button>
+          </div>
+          <div class="toggle-group">
+            <button type="button" class="cal-toggle active" data-key="ex-${mic}"
+                    data-mode="upcoming">Upcoming</button>
+            <button type="button" class="cal-toggle" data-key="ex-${mic}"
+                    data-mode="all">All dates</button>
+          </div>
+        </div>
+        <div id="ex-${mic}-cal-grid" class="cal-grid"></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Next Holiday</h2>
+          <button type="button" class="extra-toggle" data-wrap="ex-${mic}-holidays-wrap">Show all</button>
+        </div>
+        <div id="ex-${mic}-next-holiday" class="empty">Loading…</div>
+        <div id="ex-${mic}-holidays-wrap" style="display:none; margin-top:12px;">
+          <table>
+            <thead><tr><th>Date</th><th>Holiday</th></tr></thead>
+            <tbody id="ex-${mic}-holidays-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="tz-card">
+        <h2>Next Timezone Shift</h2>
+        <div id="ex-${mic}-tz" class="empty">Loading…</div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Expiry Lookup</h2>
+          <button type="button" class="extra-toggle" data-wrap="ex-${mic}-expiry-all-wrap">Show all</button>
+        </div>
+        <div class="row" style="margin-bottom:12px; justify-content:flex-start; gap:8px;">
+          <label class="muted" for="ex-${mic}-expiry-select">Underlying:</label>
+          <select id="ex-${mic}-expiry-select" data-mic="${mic}"><option>Loading…</option></select>
+        </div>
+        <div id="ex-${mic}-expiry-next" class="empty">Select an underlying above.</div>
+        <div id="ex-${mic}-expiry-all-wrap" style="display:none; margin-top:12px;">
+          <table>
+            <thead><tr><th>Date</th><th>Contract</th></tr></thead>
+            <tbody id="ex-${mic}-expiry-all-body"></tbody>
+          </table>
+        </div>
+      </div>
+      ${releasesCard}
+      <div class="card">
+        <div class="card-header">
+          <h2>Alerts</h2>
+          <div class="card-header-controls">
+            <label class="muted" for="ex-${mic}-alerts-days-input">Show next</label>
+            <input type="number" id="ex-${mic}-alerts-days-input" class="alerts-days-input"
+                   data-key="ex-${mic}" data-target="ex-${mic}-alerts-body"
+                   min="0" max="365" value="1" style="width:56px;">
+            <span class="muted">day(s)</span>
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>Severity</th><th>Title</th><th>Triggered</th></tr></thead>
+          <tbody id="ex-${mic}-alerts-body"></tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function loadExchangeHolidays(mic) {
+    const nextEl = document.getElementById(`ex-${mic}-next-holiday`);
+    const tbody = document.getElementById(`ex-${mic}-holidays-body`);
+    nextEl.textContent = "Loading…";
+    try {
+      const all = await getJSON(`/events?exchanges=${mic}&event_types=holiday`);
+      const today = todayISO();
+      const upcoming = all.filter((h) => h.date >= today);
+      nextEl.innerHTML = upcoming.length
+        ? `<div class="tz-shift">${upcoming[0].date} &mdash; ${upcoming[0].holiday_name}</div>`
+        : `<span class="empty">None scheduled</span>`;
+      tbody.innerHTML = all.length
+        ? all.map((h) => `<tr><td class="num">${h.date}</td><td>${h.holiday_name}</td></tr>`).join("")
+        : `<tr><td colspan="2" class="empty">No holidays found.</td></tr>`;
+    } catch (err) {
+      nextEl.innerHTML = `<span class="empty">Error: ${err.message}</span>`;
+    }
+  }
+
+  async function loadExchangeTimezone(mic, timezone) {
+    const el = document.getElementById(`ex-${mic}-tz`);
+    el.textContent = "Loading…";
+    try {
+      const info = await nextDstShiftInfo(timezone);
+      el.innerHTML = `<div class="tz-shift">${info.headline}</div>
+                       <div class="tz-detail">${info.detail}</div>`;
+    } catch (err) {
+      el.innerHTML = `<span class="empty">Error: ${err.message}</span>`;
+    }
+  }
+
+  // --- Expiry Lookup: pick an underlying, see its next (and optionally all) expiries ------
+  // Only "underlying" is offered as a selector today since every currently configured CME
+  // product is a plain future (instrument_type/series are 1:1 with the underlying) — if
+  // options or other instrument types are ever added, this is where a second selector
+  // would go, without changing the lookup mechanism itself.
+  const expiryCache = {}; // mic -> full list of expiry events for that exchange
+
+  function renderExpirySelection(mic, underlying) {
+    const events = (expiryCache[mic] || []).filter((e) => e.underlying === underlying);
+    const today = todayISO();
+    const nextEl = document.getElementById(`ex-${mic}-expiry-next`);
+    const sorted = events.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const upcoming = sorted.find((e) => e.date >= today);
+    nextEl.innerHTML = upcoming
+      ? `<div class="tz-shift">${upcoming.date} &mdash; ${upcoming.source_raw_id || underlying}</div>
+         <div class="tz-detail">${upcoming.instrument_type}, ${upcoming.series}</div>`
+      : `<span class="empty">No upcoming expiry found for ${underlying}.</span>`;
+    const tbody = document.getElementById(`ex-${mic}-expiry-all-body`);
+    tbody.innerHTML = sorted.length
+      ? sorted.map((e) => `
+          <tr><td class="num">${e.date}</td><td>${e.source_raw_id || underlying}</td></tr>`).join("")
+      : `<tr><td colspan="2" class="empty">No expiries found.</td></tr>`;
+  }
+
+  async function loadExchangeExpiryLookup(mic) {
+    const select = document.getElementById(`ex-${mic}-expiry-select`);
+    const nextEl = document.getElementById(`ex-${mic}-expiry-next`);
+    select.innerHTML = `<option>Loading…</option>`;
+    try {
+      const events = await getJSON(`/events?exchanges=${mic}&event_types=expiry`);
+      expiryCache[mic] = events;
+      const underlyings = Array.from(new Set(events.map((e) => e.underlying))).sort();
+      if (!underlyings.length) {
+        select.innerHTML = `<option value="">None configured</option>`;
+        nextEl.innerHTML = `<span class="empty">No expiry data for this exchange.</span>`;
+        return;
+      }
+      select.innerHTML = underlyings.map((u) => `<option value="${u}">${u}</option>`).join("");
+      const today = todayISO();
+      const soonest = events
+        .filter((e) => e.date >= today)
+        .sort((a, b) => (a.date < b.date ? -1 : 1))[0];
+      const defaultUnderlying = soonest ? soonest.underlying : underlyings[0];
+      select.value = defaultUnderlying;
+      renderExpirySelection(mic, defaultUnderlying);
+    } catch (err) {
+      select.innerHTML = `<option>Error</option>`;
+      nextEl.innerHTML = `<span class="empty">Error: ${err.message}</span>`;
+    }
+  }
+
+  document.addEventListener("change", (e) => {
+    const select = e.target.closest("select[id^='ex-'][id$='-expiry-select']");
+    if (!select) return;
+    renderExpirySelection(select.dataset.mic, select.value);
+  });
+
+  async function loadExchangeCalendar(mic) {
+    const state = exchangeCalState[mic];
+    document.getElementById(`ex-${mic}-cal-label`).textContent =
+      `${MONTHS[state.month - 1]} ${state.year}`;
+    const grid = document.getElementById(`ex-${mic}-cal-grid`);
+    grid.innerHTML = `<div class="empty">Loading…</div>`;
+    try {
+      const data = await getJSON(`/calendar/${state.year}/${state.month}`);
+      calendarCache[`ex-${mic}`] = {
+        gridEl: grid, year: state.year, month: state.month, data,
+        filterMic: mic, filterCountry: state.country, filterTimezone: state.timezone,
+      };
+      rerenderCalendar(`ex-${mic}`);
+    } catch (err) {
+      grid.innerHTML = `<div class="empty">Error: ${err.message}</div>`;
+    }
+  }
+
+  async function loadExchangeAlerts(mic, country, timezone) {
+    const tbody = document.getElementById(`ex-${mic}-alerts-body`);
+    tbody.innerHTML = `<tr><td colspan="3" class="empty">Loading…</td></tr>`;
+    const key = `ex-${mic}`;
+    try {
+      const alerts = await getJSON("/alerts?limit=100");
+      // An alert belongs here if its event is tied to this exchange directly
+      // (holiday/expiry), is an economic release for this exchange's country
+      // (economic releases never carry an `exchange`, only a `country`), or is
+      // a DST shift for this exchange's own timezone (dst_change events never
+      // carry an `exchange` either, only an `iana_zone` -- same class of gap,
+      // already hit once for economic releases, missed here until now: this
+      // silently dropped every DST alert from every exchange tab while it
+      // still showed in Consolidated View's unfiltered list).
+      alertsCache[key] = alerts.filter((a) => {
+        if (!a.event) return false;
+        if (a.event.exchange === mic) return true;
+        if (a.event.event_type === "economic_release") return a.event.country === country;
+        if (a.event.event_type === "dst_change") return a.event.iana_zone === timezone;
+        return false;
+      });
+      renderAlertsTable(`ex-${mic}-alerts-body`, key, "No alerts for this exchange.");
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="3" class="empty">Error: ${err.message}</td></tr>`;
+    }
+  }
+
+  async function loadExchangeReleases(mic, country) {
+    const tbody = document.getElementById(`ex-${mic}-releases-body`);
+    if (!tbody) return; // this exchange has no country set — card wasn't rendered
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">Loading…</td></tr>`;
+    try {
+      const events = await getJSON("/events?event_types=economic_release");
+      releasesCache[`ex-${mic}`] = events.filter((e) => e.country === country);
+      renderReleasesTable(`ex-${mic}-releases-body`, `ex-${mic}`, `ex-${mic}:core`, true);
+      renderReleasesTable(`extra-ex-${mic}-body`, `ex-${mic}`, `ex-${mic}:extra`, false);
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty">Error: ${err.message}</td></tr>`;
+    }
+  }
+
+  function loadExchangeAll(ex) {
+    const mic = ex.mic;
+    loadExchangeCalendar(mic);
+    loadExchangeHolidays(mic);
+    loadExchangeTimezone(mic, ex.timezone);
+    loadExchangeExpiryLookup(mic);
+    loadExchangeAlerts(mic, ex.country, ex.timezone);
+    loadExchangeReleases(mic, ex.country);
+  }
+
+  async function initExchangeTabs() {
+    let exchanges;
+    try {
+      exchanges = await getJSON("/exchanges");
+    } catch (err) {
+      console.error("failed to load exchange list for tabs:", err.message);
+      return;
+    }
+
+    const outerNav = document.getElementById("outer-tabs");
+    const container = document.getElementById("exchange-panels");
+    const now = new Date();
+
+    exchanges.forEach((ex) => {
+      const mic = ex.mic;
+      exchangeCalState[mic] = {
+        year: now.getUTCFullYear(), month: now.getUTCMonth() + 1,
+        country: ex.country, timezone: ex.timezone,
+      };
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.dataset.outer = mic;
+      btn.textContent = mic;
+      outerNav.appendChild(btn);
+
+      const panel = document.createElement("div");
+      panel.className = "outer-panel";
+      panel.id = `outer-panel-${mic}`;
+      panel.innerHTML = exchangePanelHTML(ex);
+      container.appendChild(panel);
+
+      loadExchangeAll(ex);
+    });
+
+    // Delegated so it works for every dynamically-added exchange panel.
+    container.addEventListener("click", (e) => {
+      const prevBtn = e.target.closest(".ex-cal-prev");
+      const nextBtn = e.target.closest(".ex-cal-next");
+      if (!prevBtn && !nextBtn) return;
+      const mic = (prevBtn || nextBtn).dataset.mic;
+      const state = exchangeCalState[mic];
+      if (prevBtn) {
+        state.month -= 1;
+        if (state.month < 1) { state.month = 12; state.year -= 1; }
+      } else {
+        state.month += 1;
+        if (state.month > 12) { state.month = 1; state.year += 1; }
+      }
+      loadExchangeCalendar(mic);
+    });
+  }
+
+  // --- init ----------------------------------------------------------------
+  const now = new Date();
+  calYear = now.getUTCFullYear();
+  calMonth = now.getUTCMonth() + 1;
+  loadCalendar();
+  loadUpcoming();
+  loadReleases();
+  loadExchanges();
+  loadAlerts();
+  initExchangeTabs();
+})();
+</script>
+</body>
+</html>

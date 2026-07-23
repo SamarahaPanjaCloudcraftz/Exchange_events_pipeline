@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "exchange-events"
+version = "0.1.0"
+description = "Production-grade pipeline for market-moving exchange events (holidays, DST, expiries, economic releases)."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Samaraha", email = "samaraha.panja@cloudcraftz.io" }]
+dependencies = [
+    "flask>=3.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "requests>=2.30",
+    "lxml>=5.0",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1"]
+dev = ["pytest>=8.0", "pytest-cov>=4.0", "ruff>=0.5", "mypy>=1.8", "types-requests"]
+
+[project.scripts]
+exchange-events = "exchange_events.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# src layout: make the package importable in tests without an editable install
+pythonpath = ["src"]
+testpaths = ["tests"]
+# Only unit + integration run by default; contract (live network) and e2e opt-in.
+addopts = "-ra -m 'not contract'"
+markers = [
+    "unit: pure unit tests, no infrastructure (default, run every commit)",
+    "integration: needs a real dependency (SQLite in-memory always; Postgres gated on EXCHANGE_EVENTS_PG_DSN)",
+    "contract: hits a live external source (network-gated, run on schedule, excluded by default)",
+    "e2e: full-pipeline test over fixtures",
+]
+
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["exchange_events"]
+mypy_path = "src"
+strict = true
+warn_unused_ignores = true

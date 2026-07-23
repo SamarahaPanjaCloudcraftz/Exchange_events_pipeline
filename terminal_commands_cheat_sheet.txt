@@ -1,0 +1,36 @@
+Terminal commands cheat-sheet
+Since you want to start driving it yourself, here's the core set (all accept --config path/to.toml; omit it to use the bundled zero-config defaults):
+
+
+# One-time setup
+pip install -e ".[dev,postgres]"          # from the project root
+cp .env.example .env                       # fill in secrets if you have them (optional)
+
+# Database
+exchange-events init-db                    # create/verify schema (idempotent)
+
+# Ingest data
+exchange-events ingest --source iana_tz --from 2026-01-01 --to 2026-12-31   # offline, always works
+exchange-events ingest --from 2026-01-01 --to 2026-12-31                    # every adapter (hits real network)
+exchange-events ingest --source cme_calendar --from 2026-01-01 --to 2026-12-31   # one source only
+
+# Alerts
+exchange-events alert                       # evaluate rules + dispatch
+exchange-events alert --no-dispatch         # evaluate only, don't send
+
+# Server (the one you're looking at now)
+exchange-events serve --host 0.0.0.0 --port 8080
+
+# Tests
+pytest                                       # full offline suite (347 tests)
+pytest -m contract                           # live network checks (slow, may fail per README's table)
+pytest --cov=exchange_events --cov-report=term-missing
+Direct API access, if you want to poke at it with curl instead of the browser:
+
+
+curl http://127.0.0.1:8765/api/v1/events/upcoming
+curl http://127.0.0.1:8765/api/v1/calendar/2026/7
+curl http://127.0.0.1:8765/api/v1/alerts
+To stop this demo server: kill 129667
+
+Want me to keep this instance running while you drive it from your own terminal, or would you rather I walk you through a specific command next?

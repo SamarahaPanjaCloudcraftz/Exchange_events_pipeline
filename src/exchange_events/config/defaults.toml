@@ -1,0 +1,89 @@
+# Default configuration (design doc §8.1). Secrets (API keys, SMTP credentials,
+# webhook URLs, Postgres DSN) are never set here — see .env.example; the loader
+# overlays them from the environment on top of this file.
+
+[database]
+backend = "sqlite"
+sqlite_path = "exchange_events.db"
+
+[ingestion]
+max_retries = 3
+backoff_base_seconds = 2.0
+backoff_max_seconds = 60.0
+incremental = true
+default_range_days = 365
+
+[alerting]
+lookback_days = 1
+lookahead_days = 30
+dst_warning_days = 2
+dst_critical_days = 1
+expiry_warning_days = 2
+economic_release_warning_days = 2
+economic_release_critical_days = 1
+
+[iv]
+enabled = false
+default_threshold = 0.30
+
+[api]
+host = "0.0.0.0"
+port = 8080
+debug = false
+
+# --- Notification routing -------------------------------------------------------
+# Post-delivery redesign (DECISIONS.md "Proximity-based alert severity"): severity
+# alone decides the channel now, uniformly across all 4 event categories (holiday/
+# DST/expiry/economic release) -- no per-type carve-out. CRITICAL -> email + teams;
+# WARNING -> teams only; INFO alerts are never dispatched at all (AlertEngine only
+# returns escalations past INFO) but remain visible via GET /api/v1/alerts, which
+# is why this catch-all "dashboard" route below is effectively unreachable today.
+[notification]
+enabled_channels = ["email", "teams", "dashboard"]
+
+[[notification.routes]]
+severity = "critical"
+channels = ["email", "teams"]
+recipients = ["team_trading"]
+
+[[notification.routes]]
+severity = "warning"
+channels = ["teams"]
+recipients = ["team_trading"]
+
+[[notification.routes]]
+# no severity -> catch-all (unreachable in practice, see note above)
+channels = ["dashboard"]
+recipients = ["all"]
+
+[[notification.recipient_groups.team_trading]]
+id = "primary"
+address = "placeholder@example.com"
+display_name = ""
+
+[[notification.recipient_groups.all]]
+id = "everyone"
+address = "everyone@example.com"
+display_name = "Everyone"
+
+# --- Adapter overrides (all optional; adapters ship working defaults) ------------
+[adapters.cme_calendar]
+[adapters.nse_circular]
+[adapters.bse_circular]
+[adapters.krx_calendar]
+[adapters.iana_tz]
+
+# Economic-release waterfall (DECISIONS.md "Economic-release waterfall"),
+# highest reliability first. All four ship working default series/table
+# mappings for the 7 required releases (adapters/{fred,bls,bea,ism}.py) — only
+# API keys (via .env, never here) are needed to go live.
+[adapters.fred_api]
+[adapters.bls_api]
+[adapters.bea_api]
+[adapters.ism_pmi]      # best-effort only — no default URL ships (see adapters/ism.py)
+
+# Forward FOMC meeting calendar (federalreserve.gov, no API key needed) — separate
+# from fred_api's generic schedule mechanism; see adapters/fomc.py.
+[adapters.fomc_schedule]
+
+[adapters.econ_calendar]
