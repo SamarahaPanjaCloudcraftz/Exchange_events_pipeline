@@ -505,3 +505,22 @@ active/inactive pair before pushing.
 Two real, host-specific systemd-219 incompatibilities found and fixed in
 quick succession, both only surfaced by actually running the script live on
 the real server rather than trusting the sandbox's newer systemd (249).
+
+## 2026-07-23 — Both timers live, correctly scheduled, fully confirmed
+
+Final confirmation after the two systemd-219 query fixes: `redeploy.sh`'s
+report now shows both timers correctly --
+`exchange-events-ingest.timer: active, enabled`, next fire
+`Thu 2026-07-23 18:00:00 IST`; `exchange-events-alert.timer: active,
+enabled`, next fire `Thu 2026-07-23 18:10:00 IST` -- exactly the intended
+10-minute stagger. Deploy completed cleanly, web service restarted and
+healthy.
+
+**Status as of this entry**: web service live and healthy on `8502`;
+ingest timer live (every 6h); alert timer live (every 6h, 10min offset);
+`redeploy.sh` fully proven as a one-stop-shop -- code, config, and systemd
+units all sync through it, nothing reactivates a deliberately-stopped unit,
+and full timer status is always visible. Real secrets in place for
+FRED/CME/SMTP/Teams; 789 real records ingested and growing automatically
+from here. Still open: HARCJ's real `app.py` not yet wired with the
+"Exchange Events" tab (only proven against the local replica so far).
