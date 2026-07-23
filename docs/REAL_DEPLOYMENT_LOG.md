@@ -564,3 +564,42 @@ code bug in how CME expiry series gets classified, now fixed and tested;
 (2) leftover stale demo data sitting in the production database, now
 cleaned up. Neither would have been caught without the user actually
 looking at the live dashboard's real data.
+
+## 2026-07-23 — HARCJ integration complete: real app.py wired, no restart needed
+
+Wired the "Exchange Events" tab into the **real** HARCJ `app.py` on the
+server (not just the local replica) -- confirmed byte-identical to the
+replica first (`diff`, zero differences) before making any change, so the
+edit was made with full confidence it matched the actual live file.
+
+Per explicit instruction, edited `app.py` directly this time (rather than
+maintaining a separate `app_new.py` and having to change the run command)
+-- four small, precise additions walked through one at a time via `nano`:
+the `streamlit.components.v1` import, the `EXCHANGE_EVENTS_URL` constant,
+the tab list extended to four, and the new tab's iframe block at the end
+of the file. Verified with `python3 -m py_compile` before touching
+anything live.
+
+**The real payoff of the whole "fully separate process" design**: no
+restart of HARCJ's Streamlit process was needed at all. Streamlit reruns
+the entire script on every interaction already, and separately watches the
+script file on disk for changes -- reloading the dashboard page in the
+browser was enough to pick up the edited `app.py` and show the new tab,
+with zero interruption to a process that has been running continuously
+since May 15 and had never been restarted before.
+
+**User confirmed live, with a screenshot**: the real HARCJ dashboard
+(`localhost:8501` via the SSH tunnel) now shows four tabs -- Dashboard,
+Live Monitor, Calibrate, Exchange_Events -- the first three rendering
+exactly as before, the new one showing this pipeline's real dashboard
+(XCME calendar, alerts, etc.) live inside an iframe. Also visibly confirms
+the CME `series` bug fixed earlier: July 24 no longer shows a bad
+"quarterly" ES expiry badge on the calendar.
+
+**This closes out the full arc of this deployment**: pipeline built,
+deployed to the real production server (root-mode, matching HARCJ's own
+model), real secrets configured, real data ingested (789+ records),
+`redeploy.sh` proven as a genuine one-stop-shop with full operational
+clarity, two real bugs found and fixed from actually using the live
+dashboard, and now the dashboard itself integrated into HARCJ with zero
+disruption to the existing system.
