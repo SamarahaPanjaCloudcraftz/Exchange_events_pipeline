@@ -42,6 +42,37 @@ PY="${VENV_DIR}/bin/python"
 
 log() { echo "[redeploy] $*"; }
 
+declare -A _timer_action=(
+    ["exchange-events-ingest.timer"]="not checked (no deploy needed this run)"
+    ["exchange-events-alert.timer"]="not checked (no deploy needed this run)"
+)
+
+# Always shown -- whether or not there was anything new to deploy -- so a
+# plain re-run is a legitimate way to check current status, not just
+# something that only reports when code changes. `systemctl list-timers`
+# silently omits inactive timers even with --all, so it can't be used here;
+# querying each unit's own NextElapseUSecRealtime works for both cases (it's
+# genuinely empty when inactive, since systemd has nothing armed to report).
+report_timer_status() {
+    log "--- timer status (current state, for full clarity) ---"
+    for _t in exchange-events-ingest.timer exchange-events-alert.timer; do
+        _active="inactive"
+        if systemctl is-active --quiet "${_t}" 2>/dev/null; then
+            _active="active"
+        fi
+        _enabled="disabled"
+        if systemctl is-enabled --quiet "${_t}" 2>/dev/null; then
+            _enabled="enabled"
+        fi
+        _next="$(systemctl show "${_t}" -p NextElapseUSecRealtime --value 2>/dev/null || true)"
+        if [[ -z "${_next}" ]]; then
+            _next="not scheduled (timer is not active)"
+        fi
+        log "${_t}: ${_active}, ${_enabled} -- ${_timer_action[${_t}]}"
+        log "  next fire: ${_next}"
+    done
+}
+
 # Bash reads this file into memory before running it -- `git checkout` below
 # changes the file on disk, but the *currently executing* process keeps
 # running the version it started with (verified directly: a script that
@@ -61,6 +92,7 @@ if [[ -z "${_REDEPLOY_STAGE2:-}" ]]; then
     target_sha="$(git rev-parse "${REF}")"
     if [[ "${target_sha}" == "${previous_sha}" ]]; then
         log "already at ${target_sha:0:12} -- nothing to deploy."
+        report_timer_status
         exit 0
     fi
 
@@ -149,10 +181,8 @@ restore_env
 # unit is only *restarted* if it's already active. If it's inactive, the
 # installed file is updated so the new config applies whenever it's next
 # started, but redeploy itself never flips it on.
-declare -A _timer_action=(
-    ["exchange-events-ingest.timer"]="no change"
-    ["exchange-events-alert.timer"]="no change"
-)
+_timer_action["exchange-events-ingest.timer"]="no change"
+_timer_action["exchange-events-alert.timer"]="no change"
 _changed_units=()
 if [[ "${EUID}" -eq 0 ]]; then
     for unit in deploy/systemd/*; do
@@ -188,27 +218,7 @@ else
     log "WARNING: not running as root -- skipping systemd unit sync (can't write /etc/systemd/system/)."
 fi
 
-log "--- timer status (current state, for full clarity) ---"
-# `systemctl list-timers` silently omits inactive timers even with --all, so
-# it can't be used to report on one that's deliberately stopped -- querying
-# each unit's own NextElapseUSecRealtime directly works for both cases (it's
-# genuinely empty when inactive, since systemd has nothing armed to report).
-for _t in exchange-events-ingest.timer exchange-events-alert.timer; do
-    _active="inactive"
-    if systemctl is-active --quiet "${_t}" 2>/dev/null; then
-        _active="active"
-    fi
-    _enabled="disabled"
-    if systemctl is-enabled --quiet "${_t}" 2>/dev/null; then
-        _enabled="enabled"
-    fi
-    _next="$(systemctl show "${_t}" -p NextElapseUSecRealtime --value 2>/dev/null || true)"
-    if [[ -z "${_next}" ]]; then
-        _next="not scheduled (timer is not active)"
-    fi
-    log "${_t}: ${_active}, ${_enabled} -- ${_timer_action[${_t}]}"
-    log "  next fire: ${_next}"
-done
+report_timer_status
 
 log "applying schema (idempotent -- safe every deploy)..."
 "${VENV_DIR}/bin/exchange-events" init-db
