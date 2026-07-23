@@ -72,11 +72,20 @@ what's left is copying it onto the actual server and filling in real paths.
 - [x] `scripts/rollback.sh` — checks out a specific SHA (or `.last_good_deploy`
       by default, written by `redeploy.sh` on success), reinstalls, restarts,
       re-verifies. Does not re-run tests (that SHA already passed them).
-- [ ] Copy the systemd unit files to `/etc/systemd/system/` on the real
-      server, adjust `WorkingDirectory`/`User`/paths to match, `daemon-reload`,
-      `enable --now` each unit.
-- [ ] Create the `exchange-events` system user + `/opt/exchange-events`
-      checkout + venv on the real server (first-time setup only).
+- [x] `scripts/bootstrap_server.sh` — first-time-only setup, run as root from
+      inside the repo already cloned to its final location (default
+      `/opt/exchange-events`): creates the `exchange-events` system user,
+      persistent `data/`+log directories, the venv, installs the systemd
+      units (path-substituted if installed somewhere other than
+      `/opt/exchange-events`), scaffolds `.env` from `.env.example` with
+      `EXCHANGE_EVENTS_SQLITE_PATH` pre-filled, runs `init-db` as the service
+      user, and enables+starts all three units. Syntax-checked and
+      cross-referenced against the unit files here; **not executed against a
+      real server** (this sandbox isn't the deployment target, and running it
+      here would create real system state — needs root and is a one-time,
+      per-server action, so it's yours to run).
+- [ ] Run it on the real server, then fill in `.env`'s real secrets (the
+      script only pre-fills the one non-secret value it already knows).
 - [ ] Decide where CI fits: recommended is GitHub Actions running
       `pytest`/`ruff`/`mypy` on every push to `main` as the **primary** gate
       (bad code never reaches the branch the server pulls), with
