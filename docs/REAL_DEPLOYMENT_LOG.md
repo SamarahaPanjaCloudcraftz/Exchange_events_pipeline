@@ -410,3 +410,48 @@ Full arc of testing `scripts/redeploy.sh` for real, on the actual server:
 
 `scripts/redeploy.sh` is now confirmed to work end-to-end, unassisted, on
 the real production server.
+
+## 2026-07-23 — redeploy.sh made a genuine one-stop-shop, with full clarity
+
+User asked: since redeploy.sh only updated code but never systemd unit
+files, shouldn't *any* change anywhere be reflected on the server through
+this one script? Also asked two sharp follow-up questions before accepting
+the fix: does the script verify the timers' next-fire time (it hadn't --
+only checked manually before), and does it actually *start* both timers
+(it would have, via an unconditional `restart`, which is wrong if one was
+deliberately left off).
+
+**Built and rigorously tested, in order:**
+1. `redeploy.sh` now re-renders every file under `deploy/systemd/` with the
+   same path substitution `bootstrap_server.sh` uses, and only touches
+   `/etc/systemd/system/` for ones that actually changed (root-only; skips
+   with a clear warning otherwise).
+2. **Bug caught immediately by testing the diff logic directly** (a
+   standalone harness, run 1/2/3 against a fake target dir): comparing via
+   process substitution without a trailing newline against a file written
+   with one meant it always reported "changed," even with identical
+   content -- every redeploy would have reinstalled and restarted both
+   timers regardless. Fixed by diffing real temp files.
+3. **Second real bug, this one from the user's own question**: both the
+   web service and (when a unit changed) the timers were restarted
+   *unconditionally* -- meaning a routine deploy could silently reactivate
+   something deliberately stopped (e.g. the alert timer, left off on
+   purpose). Fixed: everything is now only restarted if already active;
+   if inactive, the file/code still updates, but redeploy never flips
+   anything on. Verified with real user-scope systemd units in both
+   states -- active+changed restarts (confirmed via the unit's own
+   `Description` picking up the new content); inactive+changed is left
+   alone, confirmed via `systemctl is-active` unchanged after the run.
+4. Added a full status report every run: each timer's active/enabled
+   state, what action (if any) was taken, and its real next-fire time --
+   via each unit's own `NextElapseUSecRealtime` property, not `systemctl
+   list-timers` (found to silently omit inactive timers even with
+   `--all`, which would have hidden exactly the case that matters most).
+5. Re-ran the full E2E redeploy harness for both web-service states
+   (active-before -> restarts + health-checks; inactive-before -> code
+   updates but stays stopped) -- both confirmed exactly right, real venv,
+   real git history, real systemd units throughout.
+
+`redeploy.sh` is now confirmed to update code, config, and systemd units
+together, in one run, without ever overriding a deliberate operator
+decision about what should currently be running.
