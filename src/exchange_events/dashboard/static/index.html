@@ -836,17 +836,11 @@
           </table>
         </div>
       </div>` : "";
-    const redeployTestBanner = mic === "XCME" ? `
-      <div style="background: var(--status-warning); color: #1a1a19; padding: 6px 12px;
-                   border-radius: 4px; font-weight: 600; margin-bottom: 10px; display: inline-block;">
-        Redeploy test marker — visible if scripts/redeploy.sh picked up this change
-      </div>` : "";
     return `
       <div class="exch-tab-header">
         <h2>${ex.name}</h2>
         <span class="muted">(${mic})</span>
       </div>
-      ${redeployTestBanner}
       <div class="card">
         <div class="card-header">
           <div class="month-nav">
