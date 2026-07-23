@@ -13,6 +13,7 @@ For the full build history, decisions, and current status, see:
 - [docs/DECISIONS.md](docs/DECISIONS.md) — every non-obvious decision and its rationale
 - [docs/PROGRESS_LOG.md](docs/PROGRESS_LOG.md) — chronological build journal, phase by phase
 - [docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md) — deploying this onto a server
+- [docs/REAL_DEPLOYMENT_LOG.md](docs/REAL_DEPLOYMENT_LOG.md) — running log of the actual production deployment
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md) — accessing the live dashboard day to day
 
 ## Status
