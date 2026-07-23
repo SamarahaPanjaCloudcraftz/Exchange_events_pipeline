@@ -99,3 +99,26 @@ First real SSH session against the production box (`CloudCraftz_2`). Findings:
 ends up available), fill in `.env` secrets, verify the web service + timers,
 confirm HARCJ is completely undisturbed, then wire `app_new.py`'s tab into
 the real (not replica) HARCJ `app.py` on the server.
+
+## 2026-07-23 — Python 3.11 resolved (no download needed)
+
+Attempted the `uv`-based fallback (installing `uv` itself first via `pip
+install --user uv`, since `curl | sh` from `releases.astral.sh` was measured
+at ~6.5KB/s — would've taken 40+ minutes — while PyPI delivered a larger
+wheel in 43s; that CDN edge is specifically throttled from this box, not
+general internet). Before letting `uv python install 3.11` attempt its own
+(possibly equally slow) download, ran it anyway to see what it would do --
+turned out **a real Python 3.11.15 was already sitting at
+`/root/.local/bin/python3.11`** (self-contained, `uv python list` confirms
+it's a proper standalone build under `.local/share/uv/python/`), left over
+from some earlier, unrelated setup on this box. `uv` just verified and
+registered it; nothing was downloaded this round. Confirmed functional
+directly (`--version`, a real interpreter invocation).
+
+**Resolved:** `/root/.local/bin/python3.11` is what `bootstrap_server.sh`
+will use (`PYTHON=/root/.local/bin/python3.11`), fully isolated from the
+system's `python3.6.8` and the existing `/usr/local/bin/python3.9` other
+cron jobs depend on.
+
+**Next:** clone the repo into `/opt/exchange-events`, run
+`bootstrap_server.sh` with that Python, fill in `.env`, verify.
