@@ -28,23 +28,23 @@ former is now the primary path (§3a), the latter kept as an alternative (§3b).
       `gh` CLI available in this environment to do it programmatically) — once
       it exists, `git remote add origin <url> && git push -u origin main`.
 
-## 2. Storage decision — still open
+## 2. Storage decision — DECIDED: SQLite (2026-07-23)
 
-- [ ] **Pick one:** SQLite on a persistent path **or** Postgres (Render's managed
-      instance, or one already running on the self-managed server) — the
-      repository layer already fully supports both, this is a config choice,
-      not a code change.
-- [ ] If SQLite: make sure `database.sqlite_path` points at a path that survives
-      redeploys — on a self-managed server that's any normal persistent disk
-      path (e.g. `/opt/exchange-events/exchange_events.db`, outside the git
-      checkout so `git checkout` in `redeploy.sh` never touches it); on Render
-      specifically, a plain container filesystem gets wiped on every redeploy,
-      so it must be on Render's persistent disk add-on.
-- [ ] If Postgres: set `EXCHANGE_EVENTS_PG_DSN` to its connection string, set
-      `database.backend = "postgres"` in the config TOML. Worth checking
-      whether the other existing system on the host already runs a Postgres
-      instance this could share a *database* on (never a schema/table) rather
-      than standing up a second server.
+- [x] SQLite chosen over Postgres — already the config default, no code
+      change needed (the repository layer supports both, this was purely a
+      config choice).
+- [x] Path made env-driven: `EXCHANGE_EVENTS_SQLITE_PATH` (new, in
+      `.env.example`) overrides `database.sqlite_path` via
+      `config/loader.py::_merge_secrets`, same pattern as
+      `EXCHANGE_EVENTS_PG_DSN`.
+- [ ] **On the real server**, set `EXCHANGE_EVENTS_SQLITE_PATH` to an absolute
+      path on persistent disk, **outside the git checkout directory** — e.g.
+      `/opt/exchange-events/data/exchange_events.db` rather than
+      `/opt/exchange-events/exchange_events.db` — so `git checkout` inside
+      `scripts/redeploy.sh` can never touch the database file, and the data
+      directory doesn't show up as untracked noise in `git status`. Create
+      that `data/` directory (and give the `exchange-events` system user
+      write access to it) as part of first-time server setup.
 
 ## 3a. Self-managed server (systemd) — primary path
 
@@ -118,7 +118,10 @@ Mirror `.env.example` exactly:
       address in `config/defaults.toml`'s `team_trading` recipient group; without
       it, CRITICAL alerts route to `placeholder@example.com` (harmless, just
       undelivered)
-- [ ] `EXCHANGE_EVENTS_PG_DSN` — only if using Postgres (§2)
+- [ ] `EXCHANGE_EVENTS_SQLITE_PATH` — required on the real server (§2); points
+      at an absolute path on persistent disk, outside the git checkout
+- [ ] `EXCHANGE_EVENTS_PG_DSN` — not used (SQLite chosen, §2); listed here only
+      for completeness if that decision is ever revisited
 
 ## 5. Domain / TLS
 

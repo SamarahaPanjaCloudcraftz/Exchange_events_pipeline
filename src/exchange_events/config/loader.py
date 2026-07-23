@@ -42,6 +42,7 @@ class Secrets(BaseSettings):
     alert_recipient_email: str | None = None
     alert_recipient_name: str | None = None
     exchange_events_pg_dsn: str | None = None
+    exchange_events_sqlite_path: str | None = None
 
 
 def load_toml(path: str | Path) -> dict[str, Any]:
@@ -76,6 +77,12 @@ def load_config(path: str | Path | None = None, *, env_file: str | Path = ".env"
 def _merge_secrets(config: AppConfig, secrets: Secrets) -> AppConfig:
     if secrets.exchange_events_pg_dsn:
         config.database.postgres_dsn = secrets.exchange_events_pg_dsn
+
+    # Deployment-specific storage path, not really a "secret" -- but env-driven
+    # for the same reason as the Postgres DSN above: it varies per environment
+    # and shouldn't require a separate committed TOML just to change one path.
+    if secrets.exchange_events_sqlite_path:
+        config.database.sqlite_path = secrets.exchange_events_sqlite_path
 
     # CME's Reference Data API v3 needs both an OAuth client ID and secret (unlike
     # the single api_key other adapters use) — the secret rides in options since
