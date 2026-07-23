@@ -207,3 +207,16 @@ started.
    restarts on its own).
 3. Post-deploy verification per DEPLOYMENT_CHECKLIST.md §6 once secrets are
    in and the tab is wired.
+
+## 2026-07-23 — Paused: everything stopped at user's request
+
+Per explicit instruction, stopped and disabled all three units right after
+confirming the successful first deployment:
+```bash
+systemctl stop exchange-events-web exchange-events-ingest.timer exchange-events-alert.timer
+systemctl disable exchange-events-web exchange-events-ingest.timer exchange-events-alert.timer
+```
+Confirmed: all three `inactive (dead)`, `ps aux | grep -i exchange` returns
+nothing -- zero exchange-events processes running on the server. HARCJ
+remains completely unaffected (never touched by any of this). Nothing from
+this pipeline is live until deliberately restarted.
