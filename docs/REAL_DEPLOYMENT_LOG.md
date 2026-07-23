@@ -309,3 +309,53 @@ confirmed `pytest` genuinely absent), then confirming the fix installs
 pytest/ruff/mypy and the full suite passes (453 passed) in that same venv.
 
 **Next:** push, then re-run the same `redeploy.sh` invocation on the server.
+
+## 2026-07-23 — Manual bypass executed successfully; one more bug caught and fixed live
+
+Since the server was stuck at commit `12224ae` (predating the re-exec and
+`.env`-hiding fixes, so `redeploy.sh` alone couldn't self-heal -- see prior
+entries), did the one-time manual bypass: `git checkout origin/main`,
+installed lockfile + `-e .` + `-e ".[dev]"`, **hid `.env` before testing**
+(`mv .env .env.bak`), ran the real suite -- **453 passed, 19 skipped**, on
+the real server, Python 3.11.15 -- then restored `.env`.
+
+**A second real bug surfaced live**, caught before it caused lasting
+confusion: the manual instructions given for "sync the updated unit file"
+used a plain `cp deploy/systemd/exchange-events-web.service
+/etc/systemd/system/` -- but that copies the file **as-is**, with its
+literal `/opt/exchange-events` paths. It overwrote the unit file
+`bootstrap_server.sh` had originally installed (which *did* have the paths
+correctly substituted to the real
+`/root/cloudcraftz/harcj_dash/exchange_event_pipeline` directory) with the
+raw, un-substituted template. Symptom: the service still started (`active
+(running)`), but bound to `127.0.0.1:8080` instead of `8502` -- because
+`EnvironmentFile` now pointed at a nonexistent `/opt/exchange-events/.env`,
+so `EXCHANGE_EVENTS_PORT` was never actually available to substitute.
+
+**Fixed** by redoing the copy with the same `sed` substitution
+`bootstrap_server.sh` itself uses:
+```bash
+sed "s#/opt/exchange-events#/root/cloudcraftz/harcj_dash/exchange_event_pipeline#g" \
+    deploy/systemd/exchange-events-web.service > /etc/systemd/system/exchange-events-web.service
+```
+Re-verified: `WorkingDirectory`/`EnvironmentFile`/`ExecStart` all show the
+real path; after `daemon-reload` + `restart`, the live process's actual
+command line shows `--bind 127.0.0.1:8502` -- **confirming the
+`${EXCHANGE_EVENTS_PORT}` substitution genuinely works on this host's real
+systemd 219**, not just the sandbox's 249 tested earlier. `curl` against
+`127.0.0.1:8502` returns `200`, 4 gunicorn workers healthy, no errors beyond
+the expected "email/teams not configured" notices (secrets not filled in
+yet).
+
+**Lesson for future manual-bypass situations**: never hand-copy a systemd
+unit file from this repo directly to `/etc/systemd/system/` if `INSTALL_DIR`
+isn't the literal default `/opt/exchange-events` -- always run it through
+the same `sed` substitution `bootstrap_server.sh` uses, or the paths will
+silently be wrong in a way that doesn't necessarily stop the service from
+starting.
+
+**Current state**: web service live and verified on `8502`. Ingest/alert
+timers still stopped/disabled (per the earlier explicit pause) -- not yet
+re-enabled. Real secrets (`FRED_API_KEY`, SMTP, Teams webhook, CME creds,
+etc.) not yet filled in. HARCJ's real `app.py` (not the local replica) not
+yet wired with the "Exchange Events" tab.
