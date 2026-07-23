@@ -487,3 +487,21 @@ of depending on `--value`, which is universally supported. Re-verified
 locally with a real active/inactive timer pair: active one now correctly
 shows its real next-fire time, inactive one still correctly shows "not
 scheduled".
+
+## 2026-07-23 — Second real bug on the same query, caught immediately after the first fix
+
+After fixing the `--value` issue, the very next redeploy run on the real
+server showed both timers as `active, enabled` (correct) but with next-fire
+times of "56y 6month 2w 6d 21h 30min" -- obviously wrong. Root cause: this
+host's systemd 219 pretty-prints `NextElapseUSecRealtime` as a *relative
+duration* rather than an absolute calendar date (the ~56 years roughly
+matches misinterpreting an epoch-based value as elapsed time -- 2026 minus
+1970 is ~56 years). Since `systemctl list-timers` was already confirmed
+correct on this exact host, switched to parsing that instead of the `show`
+property at all: `--no-legend` gives exactly one clean data line for an
+active timer, nothing for an inactive one. Re-verified locally with a real
+active/inactive pair before pushing.
+
+Two real, host-specific systemd-219 incompatibilities found and fixed in
+quick succession, both only surfaced by actually running the script live on
+the real server rather than trusting the sandbox's newer systemd (249).
