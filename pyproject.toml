@@ -20,7 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]
 deploy = ["gunicorn>=22.0"]
-dev = ["pytest>=8.0", "pytest-cov>=4.0", "ruff>=0.5", "mypy>=1.8", "types-requests"]
+dev = ["pytest>=8.0", "pytest-cov>=4.0", "ruff>=0.5", "mypy>=1.8", "types-requests", "lxml-stubs"]
 
 [project.scripts]
 exchange-events = "exchange_events.main:main"

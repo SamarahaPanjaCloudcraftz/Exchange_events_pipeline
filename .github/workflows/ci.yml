@@ -1,0 +1,36 @@
+name: CI
+
+# Primary test gate: bad code should never reach main, let alone whatever a
+# self-managed server's scripts/redeploy.sh later pulls. redeploy.sh runs the
+# same three checks again right before restarting the live service, as a
+# secondary safety net -- this workflow is what should normally catch a
+# problem first.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install locked dependencies
+        run: |
+          pip install -r requirements.lock.txt
+          pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check src tests
+
+      - name: Type-check (mypy --strict)
+        run: mypy src/exchange_events
+
+      - name: Test (offline: unit + integration + e2e; contract excluded)
+        run: pytest -q
