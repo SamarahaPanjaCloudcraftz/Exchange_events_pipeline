@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Deliberate, gated redeploy: pull -> install -> test -> migrate -> restart -> verify.
+# Deliberate, gated redeploy: pull -> install -> test -> sync units -> migrate
+# -> restart -> verify. One-stop-shop: any change anywhere in the repo -- app
+# code, config, or a systemd unit file itself -- gets reflected on the server
+# through this one script; nothing here should ever need a separate manual
+# step for a routine change.
 #
 # Cron jobs (`exchange-events ingest` / `alert`) never run this -- they just
 # execute whatever is already installed. This script is the only thing that
@@ -11,6 +15,10 @@
 # Usage: scripts/redeploy.sh [git-ref]   (default ref: origin/main)
 #
 # Configure via env vars (defaults shown):
+#   INSTALL_DIR=<current directory>      -- used only to path-substitute
+#                                            deploy/systemd/* the same way
+#                                            bootstrap_server.sh does, when
+#                                            syncing changed unit files
 #   VENV_DIR=.venv
 #   SERVICE_NAME=exchange-events-web     # systemd unit for the gunicorn service
 #   HEALTH_URL=http://127.0.0.1:${EXCHANGE_EVENTS_PORT}/api/v1/exchanges
@@ -23,6 +31,7 @@
 set -euo pipefail
 
 REF="${1:-origin/main}"
+INSTALL_DIR="${INSTALL_DIR:-$(pwd)}"
 VENV_DIR="${VENV_DIR:-.venv}"
 SERVICE_NAME="${SERVICE_NAME:-exchange-events-web}"
 _env_port="$(grep -oP '^EXCHANGE_EVENTS_PORT=\K.*' .env 2>/dev/null || true)"
@@ -128,6 +137,36 @@ if ! "${VENV_DIR}/bin/ruff" check src tests || ! "${VENV_DIR}/bin/mypy" src/exch
 fi
 
 restore_env
+
+# One-stop-shop: a change anywhere in the repo -- code, config, or a systemd
+# unit itself -- should be reflected on the server through this one script,
+# not require a separate manual step. Re-render each unit under
+# deploy/systemd/ with the same path substitution bootstrap_server.sh uses,
+# and only touch /etc/systemd/system/ for ones that actually changed.
+_units_changed=0
+if [[ "${EUID}" -eq 0 ]]; then
+    for unit in deploy/systemd/*; do
+        _name="$(basename "${unit}")"
+        if [[ "${INSTALL_DIR}" != "/opt/exchange-events" ]]; then
+            _rendered="$(sed "s#/opt/exchange-events#${INSTALL_DIR}#g" "${unit}")"
+        else
+            _rendered="$(cat "${unit}")"
+        fi
+        if [[ ! -f "/etc/systemd/system/${_name}" ]] || \
+           ! diff -q <(printf '%s' "${_rendered}") "/etc/systemd/system/${_name}" >/dev/null 2>&1; then
+            log "systemd unit changed: ${_name} -- installing"
+            printf '%s\n' "${_rendered}" > "/etc/systemd/system/${_name}"
+            _units_changed=1
+        fi
+    done
+    if [[ "${_units_changed}" -eq 1 ]]; then
+        log "reloading systemd and restarting affected timers..."
+        systemctl daemon-reload
+        systemctl restart exchange-events-ingest.timer exchange-events-alert.timer 2>/dev/null || true
+    fi
+else
+    log "WARNING: not running as root -- skipping systemd unit sync (can't write /etc/systemd/system/)."
+fi
 
 log "applying schema (idempotent -- safe every deploy)..."
 "${VENV_DIR}/bin/exchange-events" init-db
