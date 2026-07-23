@@ -455,3 +455,15 @@ deliberately left off).
 `redeploy.sh` is now confirmed to update code, config, and systemd units
 together, in one run, without ever overriding a deliberate operator
 decision about what should currently be running.
+
+## 2026-07-23 — Timer status report now shows even with nothing to deploy
+
+Follow-up to the same conversation: the user wanted to enable both timers
+and re-run redeploy.sh to see their status reflected -- but since nothing
+new would be pushed, the script would have exited at "nothing to deploy"
+before ever reaching the status report. Fixed by extracting it into a
+`report_timer_status()` function called from both that early-exit path and
+the normal post-deploy path, verified directly (a real clone already at the
+latest commit correctly showed the full report instead of just the
+one-line "nothing to deploy" message). A plain re-run of `redeploy.sh` is
+now a legitimate way to check current timer state at any time.
