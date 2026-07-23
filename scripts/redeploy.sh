@@ -33,24 +33,43 @@ PY="${VENV_DIR}/bin/python"
 
 log() { echo "[redeploy] $*"; }
 
-previous_sha="$(git rev-parse HEAD)"
+# Bash reads this file into memory before running it -- `git checkout` below
+# changes the file on disk, but the *currently executing* process keeps
+# running the version it started with (verified directly: a script that
+# checks out a new version of itself mid-run still executes its old body).
+# So a fix to redeploy.sh's own logic could never take effect through
+# redeploy.sh alone, and since a failed run reverts to the previous commit,
+# it would fail identically forever. Fixed by re-exec'ing this same script
+# immediately after checkout, via a stage marker so the second pass skips
+# fetch/checkout (already done) and picks up install/test/restart using
+# whatever this file now says on disk.
+if [[ -z "${_REDEPLOY_STAGE2:-}" ]]; then
+    previous_sha="$(git rev-parse HEAD)"
+
+    log "fetching..."
+    git fetch --quiet origin
+
+    target_sha="$(git rev-parse "${REF}")"
+    if [[ "${target_sha}" == "${previous_sha}" ]]; then
+        log "already at ${target_sha:0:12} -- nothing to deploy."
+        exit 0
+    fi
+
+    log "checking out ${REF} (${target_sha:0:12})"
+    git checkout --quiet "${target_sha}"
+
+    log "re-executing (picking up any change to redeploy.sh itself)..."
+    exec env _REDEPLOY_STAGE2=1 _REDEPLOY_PREVIOUS_SHA="${previous_sha}" \
+        "${BASH_SOURCE[0]}" "${REF}"
+fi
+
+previous_sha="${_REDEPLOY_PREVIOUS_SHA}"
+target_sha="$(git rev-parse HEAD)"
 
 revert_to_previous() {
     log "reverting working tree to previous known-good commit ${previous_sha}"
     git checkout --quiet "${previous_sha}"
 }
-
-log "fetching..."
-git fetch --quiet origin
-
-target_sha="$(git rev-parse "${REF}")"
-if [[ "${target_sha}" == "${previous_sha}" ]]; then
-    log "already at ${target_sha:0:12} -- nothing to deploy."
-    exit 0
-fi
-
-log "checking out ${REF} (${target_sha:0:12})"
-git checkout --quiet "${target_sha}"
 
 log "installing locked dependencies..."
 if ! "${PIP}" install --quiet -r requirements.lock.txt; then
