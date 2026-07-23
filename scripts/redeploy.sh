@@ -64,14 +64,19 @@ report_timer_status() {
         if systemctl is-enabled --quiet "${_t}" 2>/dev/null; then
             _enabled="enabled"
         fi
-        # Not using `--value` here: confirmed live that this host's older
-        # systemctl (systemd 219) doesn't support it, silently producing
-        # empty output that read as "not scheduled" even for a genuinely
-        # active, correctly-scheduled timer (systemctl list-timers showed
-        # the real next-fire time the whole time). Parsing the plain
-        # "Key=Value" form works on every systemd version.
-        _next="$(systemctl show "${_t}" -p NextElapseUSecRealtime 2>/dev/null | sed -n 's/^NextElapseUSecRealtime=//p')"
-        if [[ -z "${_next}" ]]; then
+        # Not using `systemctl show -p NextElapseUSecRealtime` here: confirmed
+        # live on the real server that this host's older systemd (219)
+        # pretty-prints that property as a RELATIVE duration ("56y 6month...")
+        # rather than an absolute date, unlike newer systemd where it prints
+        # a real calendar timestamp -- garbage either way it's read. `systemctl
+        # list-timers` was confirmed correct on this exact host, so parse that
+        # instead: with --no-legend it prints exactly one data line for an
+        # active timer (first 4 fields = weekday/date/time/tz) and nothing at
+        # all for an inactive one (no error, just empty output).
+        _line="$(systemctl list-timers "${_t}" --all --no-legend 2>/dev/null)"
+        if [[ -n "${_line}" ]]; then
+            _next="$(awk '{print $1, $2, $3, $4}' <<< "${_line}")"
+        else
             _next="not scheduled (timer is not active)"
         fi
         log "${_t}: ${_active}, ${_enabled} -- ${_timer_action[${_t}]}"
