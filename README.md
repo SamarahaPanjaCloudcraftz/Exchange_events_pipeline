@@ -12,10 +12,12 @@ For the full build history, decisions, and current status, see:
 - [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) — the phased plan this was built from
 - [docs/DECISIONS.md](docs/DECISIONS.md) — every non-obvious decision and its rationale
 - [docs/PROGRESS_LOG.md](docs/PROGRESS_LOG.md) — chronological build journal, phase by phase
+- [docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md) — deploying this onto a server
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) — accessing the live dashboard day to day
 
 ## Status
 
-All 15 planned phases are complete. **385 tests pass** (unit + integration + e2e), 18
+All 15 planned phases are complete. **453 tests pass** (unit + integration + e2e), 19
 skip cleanly without a Postgres server, 6 live-network contract tests are opt-in.
 `ruff` and `mypy --strict` are clean across the whole `src/` tree.
 
