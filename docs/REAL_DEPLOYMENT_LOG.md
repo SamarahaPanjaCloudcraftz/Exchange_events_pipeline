@@ -168,3 +168,42 @@ directly. One less step.
 **Next:** clone the repo into
 `/root/cloudcraftz/harcj_dash/exchange_event_pipeline`, then run
 `PYTHON=/root/.local/bin/python3.11 ./scripts/bootstrap_server.sh`.
+
+## 2026-07-23 — First real deployment: SUCCESS
+
+Cloned `https://github.com/SamarahaPanjaCloudcraftz/Exchange_events_pipeline`
+into `/root/cloudcraftz/harcj_dash/exchange_event_pipeline` (empty sibling
+directory to HARCJ's own `dashboard_new`, confirmed no interference — see
+prior entry). Ran:
+```bash
+PYTHON=/root/.local/bin/python3.11 INSTALL_DIR=/root/cloudcraftz/harcj_dash/exchange_event_pipeline ./scripts/bootstrap_server.sh
+```
+Completed with no errors: venv built from Python 3.11.15, `.env` scaffolded,
+systemd units installed, schema applied, all three units enabled and
+started.
+
+**Verified live, all green:**
+- `exchange-events-web.service`: active, gunicorn running, `/` and
+  `/api/v1/exchanges` both return 200 with real data on `127.0.0.1:8080`.
+- `systemctl list-timers`: both timers registered with correct next-run
+  times (alert ~15min cadence, ingest ~6h cadence) — **empirically confirms
+  the `OnCalendar` step syntax (`0/15`, `0/6`) parses correctly on this
+  host's systemd 219**, the one thing that couldn't be checked beforehand
+  (`systemd-analyze calendar` doesn't exist on this version).
+- **HARCJ fully undisturbed**: Streamlit's PID (12903) and start time
+  (`May15`) unchanged -- never restarted. Both scheduler processes still
+  running normally. Port 8501 still 200. `crontab -l` byte-identical to
+  before, nothing added.
+
+**Remaining steps:**
+1. Fill in `/root/cloudcraftz/harcj_dash/exchange_event_pipeline/.env` with
+   real secrets (FRED/BLS/BEA/CME keys, SMTP, Teams webhook,
+   `ALERT_RECIPIENT_EMAIL`), then `systemctl restart exchange-events-web`.
+2. Wire the "Exchange Events" tab into the *real* HARCJ `app.py` on this
+   server (not just the local replica) -- add a new `app_new.py` there too,
+   per the same pattern already proven locally, then have HARCJ's actual
+   Streamlit process pick it up (needs a restart of that one process --
+   coordinate timing since it's the one long-running process HARCJ never
+   restarts on its own).
+3. Post-deploy verification per DEPLOYMENT_CHECKLIST.md §6 once secrets are
+   in and the tab is wired.
