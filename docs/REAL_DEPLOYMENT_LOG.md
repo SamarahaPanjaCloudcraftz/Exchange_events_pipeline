@@ -524,3 +524,43 @@ and full timer status is always visible. Real secrets in place for
 FRED/CME/SMTP/Teams; 789 real records ingested and growing automatically
 from here. Still open: HARCJ's real `app.py` not yet wired with the
 "Exchange Events" tab (only proven against the local replica so far).
+
+## 2026-07-23 — Real CME "series" bug found by the user on the live dashboard, fixed
+
+User noticed the XCME tab's calendar showed an ES expiry on 2026-07-24
+labeled "quarterly" -- factually impossible, since standard quarterly ES
+futures only expire Mar/Jun/Sep/Dec. Investigated (via a research agent,
+not guessed): root cause was `adapters/cme.py` setting `series` from a
+static per-underlying config value (`DEFAULT_PRODUCTS`), applied uniformly
+to every instrument CME's API returned for "ES" regardless of the actual
+contract month -- never derived from CME's own data. Confirmed the date
+itself was genuine live CME data, only the label was fabricated by our own
+code.
+
+**Fixed** (`src/exchange_events/adapters/cme.py`): added `_series_for()`,
+deriving each instrument's real cadence from its own Globex symbol's month
+code (standard CME futures month-code table, e.g. "U" -> September ->
+quarterly; "N" -> July -> not quarterly -> "monthly"), falling back to the
+product's configured default only if the symbol doesn't parse as expected.
+Two new regression tests added and passing (455 total, was 453). Corrected
+the flawed "series are 1:1 with the underlying" assumption recorded in
+DECISIONS.md's earlier "CME dashboard expansion" entry, as its own new
+entry with full detail.
+
+**Separate, real production-data issue found while cleaning up**: the
+2026-07-24 ES record that triggered this whole investigation turned out to
+be `source='cme'` (singular) in the database -- not `source='cme_calendar'`
+(the real adapter's actual source name) -- meaning it was a **stale,
+orphaned row from old demo/test data**, unrelated to today's code bug at
+all. It had `source_raw_id=null` and an older `ingested_at` timestamp than
+every other real record. Confirmed via `SELECT source, event_type,
+COUNT(*) FROM events GROUP BY source, event_type` that this was an isolated
+single row (every other source in the database was correctly named) before
+deleting it (`DELETE FROM events WHERE source='cme' AND
+event_type='expiry'`) -- verified gone afterward, nothing else affected.
+
+Two real, independent bugs found from one user observation: (1) a genuine
+code bug in how CME expiry series gets classified, now fixed and tested;
+(2) leftover stale demo data sitting in the production database, now
+cleaned up. Neither would have been caught without the user actually
+looking at the live dashboard's real data.
