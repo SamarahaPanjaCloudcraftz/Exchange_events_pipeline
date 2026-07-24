@@ -32,5 +32,5 @@ jobs:
       - name: Type-check (mypy --strict)
         run: mypy src/exchange_events
 
-      - name: Test (offline: unit + integration + e2e; contract excluded)
+      - name: "Test (offline: unit + integration + e2e; contract excluded)"
         run: pytest -q
